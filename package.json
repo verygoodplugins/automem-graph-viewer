@@ -1,14 +1,29 @@
 {
   "name": "@automem/graph-viewer",
+  "description": "Standalone graph viewer service for AutoMem",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/verygoodplugins/automem-graph-viewer.git"
+  },
+  "homepage": "https://github.com/verygoodplugins/automem-graph-viewer",
+  "bugs": {
+    "url": "https://github.com/verygoodplugins/automem-graph-viewer/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "npx vite",
     "dev:all": "node ./scripts/dev-all.mjs",
-    "build": "tsc -b && npx vite build",
+    "typecheck": "tsc -b",
+    "build": "npm run typecheck && npx vite build",
     "preview": "npx vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "start": "node server.mjs"
   },
   "dependencies": {
     "@mediapipe/camera_utils": "^0.3.1675466862",
