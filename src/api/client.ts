@@ -31,7 +31,15 @@ function getApiBase(): string {
     // In embedded mode, use relative URL (same origin)
     return ''
   }
-  return localStorage.getItem('automem_server') || 'http://localhost:8001'
+
+  // Check localStorage for explicit server config
+  const storedServer = localStorage.getItem('automem_server')
+  if (storedServer) {
+    return storedServer
+  }
+
+  // Default: use relative URLs so Vite proxy (dev) or same-origin (prod) handles routing
+  return ''
 }
 
 function getTokenFromQuery(): string | null {

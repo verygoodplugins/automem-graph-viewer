@@ -217,7 +217,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
         }))
         setGestureState(DEFAULT_STATE)
         onPlaybackEnd?.()
-        console.log('[PLAYBACK] END')
         return
       }
     }
@@ -263,7 +262,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
       isPaused: false,
     }))
 
-    console.log('[PLAYBACK] START', recording.metadata.name)
     animationFrameRef.current = requestAnimationFrame(tick)
   }, [state.isPaused, state.speed, tick])
 
@@ -276,8 +274,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
       ...prev,
       isPaused: true,
     }))
-
-    console.log('[PLAYBACK] PAUSE at', state.currentTime)
   }, [state.currentTime])
 
   // Stop playback
@@ -293,7 +289,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
     }))
 
     setGestureState(DEFAULT_STATE)
-    console.log('[PLAYBACK] STOP')
   }, [])
 
   // Seek to time
@@ -323,8 +318,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
           pausedAtRef.current = clampedTime
         }
       }
-
-      console.log('[PLAYBACK] SEEK to', clampedTime)
     },
     [getFrameAtTime, frameToGestureState, onGestureChange, state.isPlaying, state.isPaused, state.speed]
   )
@@ -348,7 +341,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
     })
 
     setGestureState(DEFAULT_STATE)
-    console.log('[PLAYBACK] LOADED', recording.metadata.name, recording.frames.length, 'frames')
   }, [])
 
   // Set playback speed
@@ -397,7 +389,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
         getRecording: () => recordingRef.current,
       }
       ;(window as unknown as Record<string, unknown>).__handPlayback = api
-      console.log('[PLAYBACK] Exposed window.__handPlayback for automation')
     }
 
     return () => {

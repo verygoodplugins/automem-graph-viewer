@@ -1226,8 +1226,6 @@ function InstancedNodes({
       // Consider it a click if moved less than 5px and less than 300ms
       const isClick = distance < 5 && dt < 300
 
-      console.log('🖱️ DOM PointerUp - distance:', distance.toFixed(1), 'dt:', dt, 'isClick:', isClick)
-
       if (isClick) {
         // Calculate NDC from event coordinates (R3F's pointer isn't updated for DOM events)
         const rect = canvas.getBoundingClientRect()
@@ -1241,14 +1239,10 @@ function InstancedNodes({
         raycaster.setFromCamera(ndcVector, camera)
         const intersects = raycaster.intersectObject(meshRef.current)
 
-        console.log('🖱️ Raycast - NDC:', x.toFixed(2), y.toFixed(2), 'intersects:', intersects.length, 'nodes:', nodeIndexMap.size)
-
         if (intersects.length > 0) {
           const instanceId = intersects[0].instanceId
-          console.log('🖱️ Raycast hit instanceId:', instanceId)
           if (instanceId !== undefined) {
             const node = nodeIndexMap.get(instanceId)
-            console.log('🖱️ Found node:', node?.id)
             if (node) {
               // Toggle selection
               onNodeSelect(selectedNode?.id === node.id ? null : node)
@@ -1543,19 +1537,13 @@ function InstancedNodes({
     (event: ThreeEvent<MouseEvent>) => {
       if (!meshRef.current) return
 
-      console.log('🖱️ R3F onClick triggered')
-
       raycaster.setFromCamera(pointer, camera)
       const intersects = raycaster.intersectObject(meshRef.current)
 
-      console.log('🖱️ R3F onClick - intersects:', intersects.length)
-
       if (intersects.length > 0) {
         const instanceId = intersects[0].instanceId
-        console.log('🖱️ R3F onClick hit instanceId:', instanceId)
         if (instanceId !== undefined) {
           const node = nodeIndexMap.get(instanceId)
-          console.log('🖱️ R3F onClick found node:', node?.id)
           if (node) {
             event.stopPropagation()
             // Toggle selection

@@ -23,6 +23,8 @@
     "build": "npm run typecheck && npx vite build",
     "preview": "npx vite preview",
     "lint": "eslint .",
+    "seed": "node scripts/seed.mjs",
+    "seed:reset": "node scripts/seed.mjs --reset",
     "start": "node server.mjs"
   },
   "dependencies": {

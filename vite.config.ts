@@ -15,26 +15,22 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Proxy to Railway backend (or override via VITE_API_TARGET env var)
+      // Proxy API routes to local Docker backend (or override via VITE_API_TARGET)
       '/graph': {
-        target: process.env.VITE_API_TARGET || 'https://automem.up.railway.app',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8001',
         changeOrigin: true,
-        secure: true,
       },
       '/recall': {
-        target: process.env.VITE_API_TARGET || 'https://automem.up.railway.app',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8001',
         changeOrigin: true,
-        secure: true,
       },
       '/memory': {
-        target: process.env.VITE_API_TARGET || 'https://automem.up.railway.app',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8001',
         changeOrigin: true,
-        secure: true,
       },
       '/health': {
-        target: process.env.VITE_API_TARGET || 'https://automem.up.railway.app',
+        target: process.env.VITE_API_TARGET || 'http://localhost:8001',
         changeOrigin: true,
-        secure: true,
       },
     },
   },
