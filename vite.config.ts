@@ -4,8 +4,9 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  // Base path for embedded mode - assets served from /viewer/static/
-  base: '/viewer/static/',
+  // Standalone deployment defaults to root path.
+  // Override for subpath hosting with VITE_BASE_PATH (for example "/viewer/").
+  base: process.env.VITE_BASE_PATH || '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

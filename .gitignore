@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+.vite/
+
+# Local env and logs
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test and browser artifacts
+playwright-report/
+test-results/
+coverage/
+
+# OS/editor noise
+.DS_Store
+.vscode/
+.idea/
