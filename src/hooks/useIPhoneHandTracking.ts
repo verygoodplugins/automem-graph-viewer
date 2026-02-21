@@ -335,7 +335,6 @@ export function useIPhoneHandTracking(options: UseIPhoneHandTrackingOptions = {}
   const lastFpsTimeRef = useRef(Date.now())
   const reconnectTimeoutRef = useRef<number>()
   const messageCountRef = useRef(0)
-  const hasLoggedLandmarksRef = useRef(false)
 
   // 1€ Filters for smooth tracking (one set per hand)
   const leftFiltersRef = useRef<HandFilters>(createHandFilters())
@@ -362,15 +361,6 @@ export function useIPhoneHandTracking(options: UseIPhoneHandTrackingOptions = {}
 
     // Process each hand
     for (const hand of data.hands) {
-      // Debug: log the actual landmark keys from iPhone (once per connection)
-      if (!hasLoggedLandmarksRef.current && Object.keys(hand.landmarks).length > 0) {
-        hasLoggedLandmarksRef.current = true
-        console.log('📍 iPhone landmark keys:', Object.keys(hand.landmarks))
-        console.log('📍 Expected keys:', Object.keys(LANDMARK_MAP))
-        const sampleEntry = Object.entries(hand.landmarks)[0]
-        console.log('📍 Sample landmark:', sampleEntry?.[0], '→', sampleEntry?.[1])
-      }
-
       // Get the appropriate filter set for this hand
       const filters = hand.handedness === 'left' ? leftFiltersRef.current : rightFiltersRef.current
 
@@ -509,10 +499,8 @@ export function useIPhoneHandTracking(options: UseIPhoneHandTrackingOptions = {}
         wsRef.current = ws
 
         ws.onopen = () => {
-          console.log('📱 Connected to iPhone hand tracking bridge')
           setIsConnected(true)
           messageCountRef.current = 0
-          hasLoggedLandmarksRef.current = false
         }
 
         ws.onmessage = (event) => {
@@ -520,21 +508,12 @@ export function useIPhoneHandTracking(options: UseIPhoneHandTrackingOptions = {}
             const data = JSON.parse(event.data) as IPhoneMessage
             messageCountRef.current++
 
-            // Log first few messages and then periodically
-            if (messageCountRef.current <= 3 || messageCountRef.current % 100 === 0) {
-              console.log(`📨 Message #${messageCountRef.current}:`, data.type, data.hands?.length || 0, 'hands')
-            }
-
             if (data.type === 'hand_tracking') {
               processMessage(data)
             } else if (data.type === 'bridge_status') {
-              console.log('📡 Bridge status:', data)
               if (typeof data.phoneConnected === 'boolean') setPhoneConnected(data.phoneConnected)
               if (Array.isArray(data.ips)) setBridgeIps(data.ips)
               if (typeof data.phonePort === 'number') setPhonePort(data.phonePort)
-            } else {
-              // Debug: log unexpected message types
-              console.log('📨 Unknown message type:', data.type, data)
             }
           } catch (e) {
             console.error('Parse error:', e, event.data)
@@ -542,7 +521,6 @@ export function useIPhoneHandTracking(options: UseIPhoneHandTrackingOptions = {}
         }
 
         ws.onclose = () => {
-          console.log('📱 Disconnected from iPhone')
           setIsConnected(false)
           setGestureState(DEFAULT_STATE)
           setPhoneConnected(false)

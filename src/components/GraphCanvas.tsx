@@ -390,12 +390,12 @@ function Scene({
   }, [layoutNodes, onLayoutNodesChange])
 
   // MiniMap: Navigate to function
-  const navigateTo = useCallback((x: number, y: number) => {
+  const navigateTo = useCallback((x: number, y: number, z?: number) => {
     if (controlsRef.current) {
       // Smoothly animate the OrbitControls target
       const controls = controlsRef.current
       const startTarget = controls.target.clone()
-      const endTarget = new THREE.Vector3(x, y, 0)
+      const endTarget = new THREE.Vector3(x, y, z ?? 0)
       const startTime = performance.now()
       const duration = 400
 
@@ -1654,14 +1654,15 @@ interface NodeLabelProps {
 function NodeLabel({ node, isSelected, isHovered }: NodeLabelProps) {
   // Truncate content for label
   const label = useMemo(() => {
-    const text = node.content.slice(0, 40)
+    const text = node.content.slice(0, 30)
     return text.length < node.content.length ? text + '...' : text
   }, [node.content])
 
   return (
-    <Billboard position={[node.x ?? 0, (node.y ?? 0) + node.radius * 2 + 2, node.z ?? 0]}>
+    <Billboard position={[node.x ?? 0, (node.y ?? 0) + node.radius * 3 + 3, node.z ?? 0]}>
       <Text
         fontSize={2.5}
+        maxWidth={30}
         color="#f1f5f9"
         anchorX="center"
         anchorY="bottom"

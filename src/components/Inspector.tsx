@@ -77,13 +77,17 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
     )
   }
 
-  const formattedDate = new Date(node.timestamp).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const formattedDate = (() => {
+    const date = new Date(node.timestamp)
+    if (isNaN(date.getTime())) return 'Unknown'
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  })()
 
   return (
     <div className="h-full glass flex flex-col overflow-hidden">
@@ -105,9 +109,10 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-slate-400 hover:text-slate-200"
+            aria-label="Close inspector"
+            className="p-2.5 rounded-lg hover:bg-white/10 transition-colors text-slate-400 hover:text-slate-200"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -153,17 +158,19 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
             {!isEditing ? (
               <button
                 onClick={handleStartEdit}
-                className="p-1 rounded hover:bg-white/10 text-slate-500 hover:text-slate-300"
+                aria-label="Edit importance"
+                className="p-2 rounded hover:bg-white/10 text-slate-500 hover:text-slate-300"
               >
-                <Edit2 className="w-3 h-3" />
+                <Edit2 className="w-3.5 h-3.5" />
               </button>
             ) : (
               <button
                 onClick={handleSave}
                 disabled={updateMutation.isPending}
-                className="p-1 rounded hover:bg-white/10 text-blue-400 hover:text-blue-300"
+                aria-label="Save importance"
+                className="p-2 rounded hover:bg-white/10 text-blue-400 hover:text-blue-300"
               >
-                <Save className="w-3 h-3" />
+                <Save className="w-3.5 h-3.5" />
               </button>
             )}
           </div>

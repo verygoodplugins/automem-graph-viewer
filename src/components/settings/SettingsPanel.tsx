@@ -105,9 +105,10 @@ export function SettingsPanel({
         <h2 className="text-sm font-semibold text-slate-200">Graph Settings</h2>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
+          aria-label="Close settings"
+          className="p-2.5 rounded hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5" />
         </button>
       </div>
 

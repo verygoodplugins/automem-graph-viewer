@@ -101,8 +101,6 @@ export function useHandRecording(options: UseHandRecordingOptions = {}) {
       frameCount: 0,
       recordingName: name || `Recording ${new Date().toLocaleTimeString()}`,
     })
-
-    console.log('🔴 Recording started:', id)
   }, [])
 
   // Stop recording and return the data
@@ -131,7 +129,6 @@ export function useHandRecording(options: UseHandRecordingOptions = {}) {
     const key = `hand_recording_${recordingIdRef.current}`
     try {
       localStorage.setItem(key, JSON.stringify(recording))
-      console.log('💾 Recording saved to localStorage:', key)
     } catch (e) {
       console.warn('Failed to save to localStorage:', e)
     }
@@ -143,8 +140,6 @@ export function useHandRecording(options: UseHandRecordingOptions = {}) {
       frameCount: 0,
       recordingName: '',
     })
-
-    console.log('⏹️ Recording stopped:', frames.length, 'frames,', duration, 'ms')
 
     // Auto-download if enabled
     if (autoDownload) {
@@ -305,8 +300,6 @@ export function downloadRecording(recording: HandRecording): void {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
-
-  console.log('📥 Downloaded:', a.download)
 }
 
 export function loadRecordingFromFile(file: File): Promise<HandRecording> {
