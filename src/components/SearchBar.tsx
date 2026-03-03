@@ -5,9 +5,10 @@ interface SearchBarProps {
   value: string
   onChange: (value: string) => void
   className?: string
+  shortcutsEnabled?: boolean
 }
 
-export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
+export function SearchBar({ value, onChange, className = '', shortcutsEnabled = true }: SearchBarProps) {
   const [localValue, setLocalValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
   const modifierLabel = useMemo(() => {
@@ -40,6 +41,8 @@ export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
 
   // Global keyboard shortcuts: Cmd/Ctrl+K and /
   useEffect(() => {
+    if (!shortcutsEnabled) return
+
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       const target = event.target
       const isTypingContext =
@@ -64,7 +67,7 @@ export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
 
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [])
+  }, [shortcutsEnabled])
 
   return (
     <div className={`relative ${className}`}>

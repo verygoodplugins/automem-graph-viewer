@@ -678,6 +678,7 @@ export default function App() {
           value={searchTerm}
           onChange={handleSearch}
           className="flex-1 max-w-xl min-w-[220px]"
+          shortcutsEnabled={!shortcutsHelpOpen}
         />
 
         <StatsBar stats={data?.stats} isLoading={isLoading} />
@@ -1081,7 +1082,12 @@ export default function App() {
       />
 
       {statusMessage && (
-        <div className="fixed bottom-5 right-5 z-[95] rounded-lg border border-blue-400/20 bg-slate-900/95 px-3 py-2 text-sm text-slate-100 shadow-xl">
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="fixed bottom-5 right-5 z-[95] rounded-lg border border-blue-400/20 bg-slate-900/95 px-3 py-2 text-sm text-slate-100 shadow-xl"
+        >
           {statusMessage}
         </div>
       )}

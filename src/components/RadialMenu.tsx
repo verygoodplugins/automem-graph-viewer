@@ -253,12 +253,16 @@ export function RadialMenu({
               onClick={item.action}
               onMouseEnter={() => setHoveredItem(item.id)}
               onMouseLeave={() => setHoveredItem(null)}
+              onFocus={() => setHoveredItem(item.id)}
+              onBlur={() => setHoveredItem(null)}
               className={`
                 absolute w-12 h-12 -translate-x-1/2 -translate-y-1/2
                 rounded-full
                 flex items-center justify-center
                 transition-all ease-out
                 bg-gradient-to-br ${item.color} shadow-lg cursor-pointer hover:shadow-xl
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90
+                focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900
                 ${isHovered ? 'scale-125 z-20' : 'scale-100'}
               `}
               style={{
