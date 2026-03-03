@@ -35,11 +35,11 @@ jobs:
             sleep 1
           done
 
-          curl -i http://127.0.0.1:3000/ | head -n 20
-          asset="$(find dist/assets -maxdepth 1 -type f -printf '%f\n' -quit)"
+          curl -si http://127.0.0.1:3000/ | head -n 20 || true
+          asset="$(find dist/assets -maxdepth 1 -type f -name '*.js' | head -n1 | xargs basename)"
           if [ -z "$asset" ]; then
             echo "No built asset found in dist/assets" >&2
             exit 1
           fi
-          curl -i "http://127.0.0.1:3000/assets/${asset}" | head -n 20
+          curl -si "http://127.0.0.1:3000/assets/${asset}" | head -n 20 || true
           curl -sI "http://127.0.0.1:3000/assets/${asset}" | grep -i "Cache-Control: public, max-age=31536000, immutable"
