@@ -65,9 +65,6 @@ export function KeyboardShortcutsHelp({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {shortcuts.map((shortcut) => (
               <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="keyboard-shortcuts-title"
                 key={shortcut.key}
                 className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2"
               >

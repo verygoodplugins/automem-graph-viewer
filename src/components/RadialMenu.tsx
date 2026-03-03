@@ -276,14 +276,6 @@ export function RadialMenu({
           )
         })}
 
-        {menuItems.length === 0 && (
-          <div
-            className="absolute left-1/2 top-12 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-700/50 bg-slate-900/95 px-3 py-1.5 text-xs text-slate-300"
-          >
-            No quick actions available
-          </div>
-        )}
-
         {/* Tooltip for hovered item */}
         {hoveredItem && (
           <div
