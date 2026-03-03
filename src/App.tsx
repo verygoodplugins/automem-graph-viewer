@@ -4,7 +4,7 @@ import { Settings } from 'lucide-react'
 // Build version - update this when making significant changes
 const BUILD_VERSION = '2024-12-23-obsidian-settings-v1'
 const HAND_CONTROLS_ENABLED = import.meta.env.VITE_ENABLE_HAND_CONTROLS === 'true'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useGraphSnapshot } from './hooks/useGraphData'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
@@ -282,6 +282,17 @@ export default function App() {
   // Camera state and navigation for bookmarks
   const [cameraStateForBookmarks, setCameraStateForBookmarks] = useState({ x: 0, y: 0, z: 150, zoom: 1 })
   const navigateForBookmarksRef = useRef<((x: number, y: number, z?: number) => void) | null>(null)
+  const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false)
+
+  useEffect(() => {
+    if (selectedNode) {
+      inspectorPanelRef.current?.expand()
+      navigateForBookmarksRef.current?.(selectedNode.x ?? 0, selectedNode.y ?? 0, selectedNode.z ?? 0)
+    } else {
+      inspectorPanelRef.current?.collapse()
+    }
+  }, [selectedNode])
 
   const handleGestureStateChange = useCallback((state: GestureState) => {
     setGestureState(state)
@@ -950,11 +961,21 @@ export default function App() {
           </Panel>
 
           {/* Resize Handle */}
-          <PanelResizeHandle className="w-1 bg-white/5 hover:bg-blue-500/50 transition-colors cursor-col-resize" />
+          <PanelResizeHandle className={`w-1 bg-white/5 hover:bg-blue-500/50 transition-colors cursor-col-resize ${!isInspectorOpen ? 'opacity-0 pointer-events-none' : ''}`} />
 
           {/* Inspector Panel */}
-          <Panel defaultSize={25} minSize={15} maxSize={40}>
+          <Panel
+            ref={inspectorPanelRef}
+            collapsible
+            collapsedSize={0}
+            defaultSize={0}
+            minSize={15}
+            maxSize={40}
+            onExpand={() => setIsInspectorOpen(true)}
+            onCollapse={() => setIsInspectorOpen(false)}
+          >
             <Inspector
+              key={selectedNode?.id ?? 'none'}
               node={selectedNode}
               onClose={() => setSelectedNode(null)}
               onNavigate={handleInspectorNavigate}
