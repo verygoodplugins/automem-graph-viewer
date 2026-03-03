@@ -160,28 +160,6 @@ export function useHandPlayback(options: UseHandPlaybackOptions = {}) {
     (newState: GestureState) => {
       if (!logEvents) return
 
-      const prev = prevGestureRef.current
-
-      // Detect state changes
-      if (newState.pinchStrength > 0.85 && (prev.pinchStrength ?? 0) <= 0.85) {
-        console.log('[GESTURE] PINCH_START', { strength: newState.pinchStrength })
-      }
-      if (newState.pinchStrength < 0.65 && (prev.pinchStrength ?? 0) >= 0.65) {
-        console.log('[GESTURE] PINCH_END', { strength: newState.pinchStrength })
-      }
-      if (newState.grabStrength > 0.72 && (prev.grabStrength ?? 0) <= 0.72) {
-        console.log('[GESTURE] GRAB_START', { strength: newState.grabStrength })
-      }
-      if (newState.grabStrength < 0.45 && (prev.grabStrength ?? 0) >= 0.45) {
-        console.log('[GESTURE] GRAB_END', { strength: newState.grabStrength })
-      }
-      if (newState.pointingHand && !prev.pointingHand) {
-        console.log('[GESTURE] POINT_START', { hand: newState.pointingHand, direction: newState.pointDirection })
-      }
-      if (!newState.pointingHand && prev.pointingHand) {
-        console.log('[GESTURE] POINT_END')
-      }
-
       prevGestureRef.current = {
         pinchStrength: newState.pinchStrength,
         grabStrength: newState.grabStrength,

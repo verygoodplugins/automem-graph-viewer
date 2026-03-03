@@ -44,7 +44,8 @@ export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
       {localValue && (
         <button
           onClick={handleClear}
-          className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
+          aria-label="Clear search"
+          className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-slate-300"
         >
           <X className="w-4 h-4" />
         </button>

@@ -212,8 +212,6 @@ export default function App() {
         getGestureState: () => gestureState,
       }
       ;(window as unknown as Record<string, unknown>).__handTest = api
-      console.log('[TEST MODE] Enabled. Use window.__handTest for automation')
-      console.log('[TEST MODE] Commands: startRecording(), stopRecording(), listRecordings(), loadFromStorage(key), play(), pause()')
     }
   }, [isTestMode, recording, playback, gestureState])
 
@@ -283,7 +281,7 @@ export default function App() {
 
   // Camera state and navigation for bookmarks
   const [cameraStateForBookmarks, setCameraStateForBookmarks] = useState({ x: 0, y: 0, z: 150, zoom: 1 })
-  const navigateForBookmarksRef = useRef<((x: number, y: number) => void) | null>(null)
+  const navigateForBookmarksRef = useRef<((x: number, y: number, z?: number) => void) | null>(null)
 
   const handleGestureStateChange = useCallback((state: GestureState) => {
     setGestureState(state)
@@ -395,6 +393,18 @@ export default function App() {
     setSelectedNode(node)
   }, [pathfinding.isSelectingTarget, pathfinding.completePathSelection, sound.playPathFound, sound.playSelect])
 
+  const handleInspectorNavigate = useCallback((node: GraphNode | null) => {
+    if (!node) return
+
+    // Preserve path-selection behavior handled in handleNodeSelect.
+    handleNodeSelect(node)
+
+    // Keep camera navigation for normal inspector navigation.
+    if (!pathfinding.isSelectingTarget) {
+      navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
+    }
+  }, [handleNodeSelect, pathfinding.isSelectingTarget])
+
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
       sound.playHover()
@@ -419,9 +429,8 @@ export default function App() {
     }))
   }, [])
 
-  const handleCopyNodeId = useCallback((nodeId: string) => {
+  const handleCopyNodeId = useCallback((_nodeId: string) => {
     // Could show a toast notification here
-    console.log('Copied node ID:', nodeId)
   }, [])
 
   const handleViewNodeContent = useCallback((node: GraphNode) => {
@@ -948,7 +957,7 @@ export default function App() {
             <Inspector
               node={selectedNode}
               onClose={() => setSelectedNode(null)}
-              onNavigate={handleNodeSelect}
+              onNavigate={handleInspectorNavigate}
               onStartPathfinding={pathfinding.startPathSelection}
               isPathSelecting={pathfinding.isSelectingTarget}
             />
