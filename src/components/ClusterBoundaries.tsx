@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Cluster } from '../hooks/useClusterDetection'
@@ -8,6 +8,8 @@ interface ClusterBoundariesProps {
   visible: boolean
   opacity?: number
 }
+
+const FADE_SPEED = 3
 
 // Generate points on a sphere surface for dotted effect
 function generateSpherePoints(radius: number, count: number): Float32Array {
@@ -39,29 +41,34 @@ function generateSpherePoints(radius: number, count: number): Float32Array {
  */
 function ClusterBoundary({
   cluster,
-  opacity = 0.3,
+  targetOpacity = 0.3,
 }: {
   cluster: Cluster
-  opacity?: number
+  targetOpacity?: number
 }) {
   const pointsRef = useRef<THREE.Points>(null)
+  const materialRef = useRef<THREE.PointsMaterial>(null)
+  const currentOpacityRef = useRef(0)
 
-  // Number of points scales with radius
   const pointCount = Math.max(100, Math.floor(cluster.radius * 8))
 
   const positions = useMemo(() => {
     return generateSpherePoints(cluster.radius, pointCount)
   }, [cluster.radius, pointCount])
 
-  // Gentle rotation for visual interest
   useFrame((_, delta) => {
     if (pointsRef.current) {
       pointsRef.current.rotation.y += delta * 0.05
       pointsRef.current.rotation.x += delta * 0.02
     }
+    // Smooth fade
+    if (materialRef.current) {
+      const diff = targetOpacity - currentOpacityRef.current
+      currentOpacityRef.current += diff * Math.min(1, delta * FADE_SPEED)
+      materialRef.current.opacity = currentOpacityRef.current
+    }
   })
 
-  // Parse color to THREE.Color
   const color = useMemo(() => {
     return new THREE.Color(cluster.color)
   }, [cluster.color])
@@ -80,10 +87,11 @@ function ClusterBoundary({
         />
       </bufferGeometry>
       <pointsMaterial
+        ref={materialRef}
         color={color}
         size={1.5}
         transparent
-        opacity={opacity}
+        opacity={0}
         sizeAttenuation
         depthWrite={false}
       />
@@ -99,17 +107,25 @@ export function ClusterBoundaries({
   visible,
   opacity = 0.3,
 }: ClusterBoundariesProps) {
-  if (!visible || clusters.length === 0) {
-    return null
-  }
+  // Keep rendering during fade-out (clusters stay mounted until opacity reaches ~0)
+  const [prevClusters, setPrevClusters] = useState<Cluster[]>([])
+  const displayClusters = visible ? clusters : prevClusters
+
+  useFrame(() => {
+    if (visible && clusters !== prevClusters) {
+      setPrevClusters(clusters)
+    }
+  })
+
+  if (displayClusters.length === 0) return null
 
   return (
     <group>
-      {clusters.map((cluster) => (
+      {displayClusters.map((cluster) => (
         <ClusterBoundary
           key={cluster.id}
           cluster={cluster}
-          opacity={opacity}
+          targetOpacity={visible ? opacity : 0}
         />
       ))}
     </group>

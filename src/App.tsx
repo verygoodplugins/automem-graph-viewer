@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Keyboard, Settings } from 'lucide-react'
 
-// Build version - update this when making significant changes
-const BUILD_VERSION = '2024-12-23-obsidian-settings-v1'
 const HAND_CONTROLS_ENABLED = import.meta.env.VITE_ENABLE_HAND_CONTROLS === 'true'
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useGraphSnapshot } from './hooks/useGraphData'
@@ -111,7 +109,13 @@ function BoltIcon({ className }: { className?: string }) {
   )
 }
 
-// Stable empty arrays to prevent creating new references on every render
+const CLUSTER_MODE_LABELS: Record<string, string> = {
+  none: 'Clustering off',
+  type: 'Clustering by type',
+  tags: 'Clustering by tags',
+  semantic: 'Clustering by semantic similarity',
+}
+
 const EMPTY_NODES: GraphNode[] = []
 const EMPTY_EDGES: import('./lib/types').GraphEdge[] = []
 
@@ -127,12 +131,6 @@ export default function App() {
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const statusTimeoutRef = useRef<number | null>(null)
-
-  // Focus/Spotlight mode state
-  const [focusModeEnabled, setFocusModeEnabled] = useState(false)
-  const [focusTransition, setFocusTransition] = useState(0) // 0-1 for smooth transition
-  const focusTransitionRef = useRef<number>(0)
-  const focusAnimationRef = useRef<number | null>(null)
 
   // Radial menu state
   const [radialMenuState, setRadialMenuState] = useState<{
@@ -164,12 +162,8 @@ export default function App() {
     return navigator.platform.toLowerCase().includes('mac') ? 'Cmd' : 'Ctrl'
   }, [])
 
-  // Cleanup focus animation on unmount
   useEffect(() => {
     return () => {
-      if (focusAnimationRef.current) {
-        cancelAnimationFrame(focusAnimationRef.current)
-      }
       if (statusTimeoutRef.current !== null) {
         window.clearTimeout(statusTimeoutRef.current)
       }
@@ -563,8 +557,14 @@ export default function App() {
   }, [])
 
   const handleClusterConfigChange = useCallback((config: Partial<ClusterConfig>) => {
-    setClusterConfig(prev => ({ ...prev, ...config }))
-  }, [])
+    setClusterConfig(prev => {
+      const next = { ...prev, ...config }
+      if (config.mode && config.mode !== prev.mode) {
+        showStatus(CLUSTER_MODE_LABELS[config.mode] || `Cluster mode: ${config.mode}`)
+      }
+      return next
+    })
+  }, [showStatus])
 
   const handleRelationshipVisibilityChange = useCallback((visibility: Partial<RelationshipVisibility>) => {
     setRelationshipVisibility(prev => ({ ...prev, ...visibility }))
@@ -582,44 +582,6 @@ export default function App() {
     setDisplayConfig(prev => ({ ...prev, showLabels: !prev.showLabels }))
   }, [])
 
-  // Focus mode toggle with smooth transition animation
-  const handleToggleFocusMode = useCallback(() => {
-    setFocusModeEnabled(prev => {
-      const newEnabled = !prev
-
-      // Cancel any existing animation
-      if (focusAnimationRef.current) {
-        cancelAnimationFrame(focusAnimationRef.current)
-      }
-
-      const startTime = performance.now()
-      const duration = 400 // 400ms transition
-      const startValue = focusTransitionRef.current
-      const endValue = newEnabled ? 1 : 0
-
-      const animate = (currentTime: number) => {
-        const elapsed = currentTime - startTime
-        const progress = Math.min(elapsed / duration, 1)
-
-        // Ease out cubic for smooth deceleration
-        const eased = 1 - Math.pow(1 - progress, 3)
-        const newTransition = startValue + (endValue - startValue) * eased
-
-        focusTransitionRef.current = newTransition
-        setFocusTransition(newTransition)
-
-        if (progress < 1) {
-          focusAnimationRef.current = requestAnimationFrame(animate)
-        } else {
-          focusAnimationRef.current = null
-        }
-      }
-
-      focusAnimationRef.current = requestAnimationFrame(animate)
-      return newEnabled
-    })
-  }, [])
-
   // Keyboard navigation
   const handleStartPathfindingFromKeyboard = useCallback(() => {
     if (selectedNode) {
@@ -634,7 +596,6 @@ export default function App() {
     onReheat: handleReheat,
     onToggleSettings: () => setSettingsPanelOpen(prev => !prev),
     onToggleLabels: handleToggleLabels,
-    onToggleFocus: handleToggleFocusMode,
     onSaveBookmark: handleSaveBookmark,
     onQuickNavigate: handleQuickNavigate,
     onStartPathfinding: handleStartPathfindingFromKeyboard,
@@ -682,39 +643,6 @@ export default function App() {
         />
 
         <StatsBar stats={data?.stats} isLoading={isLoading} />
-
-        {/* Version indicator - helps verify deployment */}
-        <span className="text-xs text-slate-500 hidden lg:inline" title="Build version">
-          {BUILD_VERSION}
-        </span>
-
-        {/* Focus/Spotlight Mode Toggle */}
-        <button
-          onClick={handleToggleFocusMode}
-          className={`
-            flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
-            ${focusModeEnabled
-              ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-lg shadow-amber-500/25'
-              : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
-            }
-          `}
-          title={focusModeEnabled ? 'Disable focus mode (F)' : 'Enable focus mode - spotlight selected node (F)'}
-        >
-          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 2v2" />
-            <path d="M12 20v2" />
-            <path d="M2 12h2" />
-            <path d="M20 12h2" />
-            <path d="m4.93 4.93 1.41 1.41" />
-            <path d="m17.66 17.66 1.41 1.41" />
-            <path d="m17.66 6.34 1.41-1.41" />
-            <path d="m4.93 19.07 1.41-1.41" />
-          </svg>
-          <span className="text-sm font-medium hidden sm:inline">
-            {focusModeEnabled ? 'Focus' : 'Focus'}
-          </span>
-        </button>
 
         {/* Performance Mode Toggle */}
         <button
@@ -881,8 +809,6 @@ export default function App() {
                 typeColors={data?.meta?.type_colors}
                 onReheatReady={setReheatFn}
                 onResetViewReady={setResetViewFn}
-                focusModeEnabled={focusModeEnabled}
-                focusTransition={focusTransition}
                 onCameraStateForBookmarks={setCameraStateForBookmarks}
                 onNavigateForBookmarks={(fn) => { navigateForBookmarksRef.current = fn }}
                 pathNodeIds={pathfinding.pathNodeIds}
@@ -1048,11 +974,9 @@ export default function App() {
           node={radialMenuState.node}
           position={radialMenuState.position}
           onClose={handleCloseRadialMenu}
-          onToggleFocus={handleToggleFocusMode}
           onStartPath={pathfinding.startPathSelection}
           onViewContent={handleViewNodeContent}
           onCopyId={handleCopyNodeId}
-          focusModeEnabled={focusModeEnabled}
         />
       )}
 

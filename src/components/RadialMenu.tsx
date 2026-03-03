@@ -12,7 +12,6 @@
 import { useEffect, useCallback, useState } from 'react'
 import {
   Search,
-  Sun,
   Route,
   Plus,
   Pencil,
@@ -36,14 +35,12 @@ interface RadialMenuProps {
   position: { x: number; y: number }
   onClose: () => void
   onFindSimilar?: (node: GraphNode) => void
-  onToggleFocus?: () => void
   onStartPath?: (nodeId: string) => void
   onAddToSelection?: (node: GraphNode) => void
   onEdit?: (node: GraphNode) => void
   onViewContent?: (node: GraphNode) => void
   onCopyId?: (nodeId: string) => void
   onDelete?: (node: GraphNode) => void
-  focusModeEnabled?: boolean
 }
 
 export function RadialMenu({
@@ -51,14 +48,12 @@ export function RadialMenu({
   position,
   onClose,
   onFindSimilar,
-  onToggleFocus,
   onStartPath,
   onAddToSelection,
   onEdit,
   onViewContent,
   onCopyId,
   onDelete,
-  focusModeEnabled = false,
 }: RadialMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
@@ -108,19 +103,6 @@ export function RadialMenu({
       color: 'from-blue-500 to-cyan-500',
       action: () => {
         onFindSimilar(node)
-        onClose()
-      },
-    })
-  }
-
-  if (onToggleFocus) {
-    menuItems.push({
-      id: 'focus',
-      icon: <Sun className="w-5 h-5" />,
-      label: focusModeEnabled ? 'Exit Focus' : 'Focus Mode',
-      color: focusModeEnabled ? 'from-amber-500 to-yellow-500' : 'from-amber-400 to-orange-500',
-      action: () => {
-        onToggleFocus()
         onClose()
       },
     })

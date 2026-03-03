@@ -20,6 +20,7 @@ import { OrbitControls, Text, Billboard } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { useForceLayout } from '../hooks/useForceLayout'
+import { usePositionInterpolation, applySelectionGravity, applyClusterAttraction } from '../hooks/usePositionInterpolation'
 import { useHandGestures, GestureState } from '../hooks/useHandGestures'
 import { useIPhoneHandTracking } from '../hooks/useIPhoneHandTracking'
 import { useHandLockAndGrab } from '../hooks/useHandLockAndGrab'
@@ -34,8 +35,16 @@ import type {
 } from '../lib/types'
 import { DEFAULT_FORCE_CONFIG, DEFAULT_DISPLAY_CONFIG, DEFAULT_CLUSTER_CONFIG, DEFAULT_RELATIONSHIP_VISIBILITY } from '../lib/types'
 import { useClusterDetection } from '../hooks/useClusterDetection'
-import { useFocusMode, type NodeFocusState } from '../hooks/useFocusMode'
 import { ClusterBoundaries } from './ClusterBoundaries'
+
+interface NodeFocusState {
+  depth: number
+  opacity: number
+  isInFocus: boolean
+}
+
+const SELECTION_DEPTH_OPACITY = [1.0, 1.0, 0.7, 0.4]
+const SELECTION_DEFAULT_OPACITY = 0.15
 import { SelectionHighlight, ConnectedPathsHighlight, PinchPreSelectHighlight } from './SelectionHighlight'
 import { getEdgeStyle } from '../lib/edgeStyles'
 import { EdgeParticles } from './EdgeParticles'
@@ -103,8 +112,6 @@ interface GraphCanvasProps {
   typeColors?: Record<string, string>
   onReheatReady?: (reheat: () => void) => void
   onResetViewReady?: (resetView: () => void) => void
-  focusModeEnabled?: boolean
-  focusTransition?: number
   // Bookmarks: expose camera state and navigation to parent
   onCameraStateForBookmarks?: (state: { x: number; y: number; z: number; zoom: number }) => void
   onNavigateForBookmarks?: (fn: (x: number, y: number, z?: number) => void) => void
@@ -146,8 +153,6 @@ export function GraphCanvas({
   typeColors = {},
   onReheatReady,
   onResetViewReady,
-  focusModeEnabled = false,
-  focusTransition = 0,
   onCameraStateForBookmarks,
   onNavigateForBookmarks,
   pathNodeIds,
@@ -250,8 +255,6 @@ export function GraphCanvas({
           typeColors={typeColors}
           onReheatReady={onReheatReady}
           onResetViewReady={onResetViewReady}
-          focusModeEnabled={focusModeEnabled}
-          focusTransition={focusTransition}
           onCameraStateChange={setCameraState}
           onLayoutNodesChange={setLayoutNodesForMiniMap}
           onNavigateToReady={handleNavigateToReady}
@@ -290,8 +293,6 @@ interface SceneProps extends Omit<GraphCanvasProps, 'onGestureStateChange' | 'on
   gestureControlEnabled: boolean
   performanceMode: boolean
   onResetViewReady?: (resetView: () => void) => void
-  focusModeEnabled: boolean
-  focusTransition: number
   onCameraStateChange?: (state: { x: number; y: number; z: number; zoom: number }) => void
   onLayoutNodesChange?: (nodes: SimulationNode[]) => void
   onNavigateToReady?: (fn: (x: number, y: number) => void) => void
@@ -333,8 +334,6 @@ function Scene({
   typeColors = {},
   onReheatReady,
   onResetViewReady,
-  focusModeEnabled,
-  focusTransition,
   onCameraStateChange,
   onLayoutNodesChange,
   onNavigateToReady,
@@ -354,15 +353,44 @@ function Scene({
   const { camera } = useThree()
   const { nodes: layoutNodes, isSimulating, reheat } = useForceLayout({ nodes, edges, forceConfig })
 
-  // DEBUG: Log node counts
-  // Focus mode - compute depth-based opacity for spotlight effect
-  const focusStates = useFocusMode(
-    layoutNodes,
-    edges,
-    selectedNode?.id ?? null,
-    focusModeEnabled,
-    focusTransition
-  )
+  // Depth-based selection dimming: auto-spotlight when a node is selected
+  const focusStates = useMemo(() => {
+    const result = new Map<string, NodeFocusState>()
+    if (!selectedNode) {
+      layoutNodes.forEach(n => result.set(n.id, { depth: -1, opacity: 1.0, isInFocus: true }))
+      return result
+    }
+    const adjacency = new Map<string, Set<string>>()
+    edges.forEach(e => {
+      if (!adjacency.has(e.source)) adjacency.set(e.source, new Set())
+      if (!adjacency.has(e.target)) adjacency.set(e.target, new Set())
+      adjacency.get(e.source)!.add(e.target)
+      adjacency.get(e.target)!.add(e.source)
+    })
+    const depths = new Map<string, number>()
+    depths.set(selectedNode.id, 0)
+    const queue = [{ id: selectedNode.id, depth: 0 }]
+    while (queue.length > 0) {
+      const { id, depth } = queue.shift()!
+      if (depth >= 3) continue
+      const neighbors = adjacency.get(id)
+      if (!neighbors) continue
+      for (const nId of neighbors) {
+        if (!depths.has(nId)) {
+          depths.set(nId, depth + 1)
+          queue.push({ id: nId, depth: depth + 1 })
+        }
+      }
+    }
+    layoutNodes.forEach(n => {
+      const depth = depths.get(n.id) ?? Infinity
+      const opacity = depth < SELECTION_DEPTH_OPACITY.length
+        ? SELECTION_DEPTH_OPACITY[depth]
+        : SELECTION_DEFAULT_OPACITY
+      result.set(n.id, { depth: depth === Infinity ? -1 : depth, opacity, isInFocus: depth <= 3 })
+    })
+    return result
+  }, [layoutNodes, edges, selectedNode])
 
   // Cluster detection
   const clusters = useClusterDetection({
@@ -371,6 +399,54 @@ function Scene({
     mode: clusterConfig.mode,
     typeColors,
   })
+
+  // Position interpolation system
+  const {
+    currentPositions: animPositions,
+    targetPositions: animTargets,
+    basePositions: animBase,
+    nodeIdToIdx,
+  } = usePositionInterpolation(layoutNodes, { lerpSpeed: 5 })
+
+  // Compute cluster centroid assignments for force attraction
+  const clusterAssignments = useMemo(() => {
+    const map = new Map<string, { cx: number; cy: number; cz: number }>()
+    clusters.forEach(cluster => {
+      cluster.nodeIds.forEach(nodeId => {
+        map.set(nodeId, { cx: cluster.centroid.x, cy: cluster.centroid.y, cz: cluster.centroid.z })
+      })
+    })
+    return map
+  }, [clusters])
+
+  // Recompute target positions when selection, cluster mode/strength, or layout changes
+  useEffect(() => {
+    if (animBase.current.length === 0) return
+
+    animTargets.current.set(animBase.current)
+
+    if (clusterConfig.mode !== 'none') {
+      applyClusterAttraction(
+        clusterAssignments,
+        nodeIdToIdx,
+        animBase.current,
+        animTargets.current,
+        clusterConfig.clusterStrength
+      )
+    }
+
+    if (selectedNode) {
+      applySelectionGravity(
+        selectedNode.id,
+        layoutNodes,
+        edges,
+        nodeIdToIdx,
+        animTargets.current,
+        animTargets.current,
+        0.5
+      )
+    }
+  }, [selectedNode, clusterConfig.mode, clusterConfig.clusterStrength, clusterAssignments, layoutNodes, edges, nodeIdToIdx, animBase, animTargets])
 
   // Expose reheat function to parent
   useEffect(() => {
@@ -901,8 +977,9 @@ function Scene({
         <BatchedEdges
           edges={edges}
           nodeById={nodeById}
+          animatedPositions={animPositions}
+          nodeIdToIdx={nodeIdToIdx}
           selectedNode={selectedNode}
-          connectedIds={connectedIds}
           relationshipVisibility={relationshipVisibility}
           linkThickness={displayConfig.linkThickness}
           linkOpacity={displayConfig.linkOpacity}
@@ -925,6 +1002,7 @@ function Scene({
         {/* Instanced nodes - single draw call for all nodes */}
         <InstancedNodes
           nodes={layoutNodes}
+          animatedPositions={animPositions}
           selectedNode={selectedNode}
           hoveredNode={hoveredNode}
           searchTerm={searchTerm}
@@ -1007,8 +1085,9 @@ function Scene({
 interface BatchedEdgesProps {
   edges: GraphEdge[]
   nodeById: Map<string, SimulationNode>
+  animatedPositions: React.MutableRefObject<Float32Array>
+  nodeIdToIdx: Map<string, number>
   selectedNode: GraphNode | null
-  connectedIds: Set<string>
   relationshipVisibility: RelationshipVisibility
   linkThickness: number
   linkOpacity: number
@@ -1023,8 +1102,9 @@ interface BatchedEdgesProps {
 function BatchedEdges({
   edges,
   nodeById,
+  animatedPositions,
+  nodeIdToIdx,
   selectedNode,
-  connectedIds,
   relationshipVisibility,
   linkThickness,
   linkOpacity,
@@ -1037,38 +1117,34 @@ function BatchedEdges({
 }: BatchedEdgesProps) {
   const lineRef = useRef<THREE.LineSegments>(null)
 
-  // Filter edges by visibility and create geometry
-  const { positions, colors, visibleCount } = useMemo(() => {
-    const positions: number[] = []
+  // Compute visible edges, their colors, and source/target node indices
+  const { edgeIndices, colors, visibleCount } = useMemo(() => {
+    const edgeIndices: { srcIdx: number; tgtIdx: number }[] = []
     const colors: number[] = []
     let visibleCount = 0
 
     edges.forEach((edge) => {
-      // Filter by relationship visibility
       if (!relationshipVisibility[edge.type]) return
 
       const sourceNode = nodeById.get(edge.source)
       const targetNode = nodeById.get(edge.target)
       if (!sourceNode || !targetNode) return
 
-      // Time Travel: hide edges when either endpoint is outside time window
+      const srcIdx = nodeIdToIdx.get(edge.source)
+      const tgtIdx = nodeIdToIdx.get(edge.target)
+      if (srcIdx === undefined || tgtIdx === undefined) return
+
       if (timeTravelActive && timeTravelVisibleNodes) {
-        const sourceVisible = timeTravelVisibleNodes.has(edge.source)
-        const targetVisible = timeTravelVisibleNodes.has(edge.target)
-        if (!sourceVisible || !targetVisible) return
+        if (!timeTravelVisibleNodes.has(edge.source) || !timeTravelVisibleNodes.has(edge.target)) return
       }
 
-      // Tag filtering: dim edges when both endpoints are not in the filtered set
-      // Only hide if BOTH are outside the filter to keep edges from matching nodes visible
       if (hasTagFilter && tagFilteredNodeIds) {
-        const sourceInFilter = tagFilteredNodeIds.has(edge.source)
-        const targetInFilter = tagFilteredNodeIds.has(edge.target)
-        if (!sourceInFilter && !targetInFilter) return
+        if (!tagFilteredNodeIds.has(edge.source) && !tagFilteredNodeIds.has(edge.target)) return
       }
 
       visibleCount++
+      edgeIndices.push({ srcIdx, tgtIdx })
 
-      // Check if this edge is part of the pathfinding result
       const edgeKey1 = `${edge.source}-${edge.target}`
       const edgeKey2 = `${edge.target}-${edge.source}`
       const isInPath = pathEdgeKeys?.has(edgeKey1) || pathEdgeKeys?.has(edgeKey2)
@@ -1079,34 +1155,20 @@ function BatchedEdges({
         (edge.source === selectedNode.id || edge.target === selectedNode.id)
 
       const isDimmed =
-        (selectedNode &&
-        !connectedIds.has(edge.source) &&
-        !connectedIds.has(edge.target)) ||
-        // Dim non-path edges when path is active
         (hasActivePath && !isInPath)
 
-      // Source vertex
-      positions.push(sourceNode.x ?? 0, sourceNode.y ?? 0, sourceNode.z ?? 0)
-      // Target vertex
-      positions.push(targetNode.x ?? 0, targetNode.y ?? 0, targetNode.z ?? 0)
-
-      // Get style for this edge type
       const style = getEdgeStyle(edge.type)
 
-      // Use style color, or bright cyan for path edges
       const color = isInPath
-        ? new THREE.Color('#00d4ff')  // Bright electric cyan for path
+        ? new THREE.Color('#00d4ff')
         : new THREE.Color(style.color)
 
-      // Get focus mode opacity for both endpoints (use minimum)
       const sourceFocus = focusStates.get(edge.source)?.opacity ?? 1
       const targetFocus = focusStates.get(edge.target)?.opacity ?? 1
       const focusOpacity = Math.min(sourceFocus, targetFocus)
 
-      // Calculate alpha based on state and style
       let alpha = style.opacity * linkOpacity * focusOpacity
       if (isInPath) {
-        // Path edges are always bright
         alpha = 1.0
       } else if (isDimmed) {
         alpha *= 0.25
@@ -1114,33 +1176,65 @@ function BatchedEdges({
         alpha = Math.min(1, alpha * 1.5)
       }
 
-      // Apply alpha to color (approximate, since LineBasicMaterial doesn't support per-vertex alpha)
       const r = color.r * alpha
       const g = color.g * alpha
       const b = color.b * alpha
-
-      // Color for source and target vertices
       colors.push(r, g, b, r, g, b)
     })
 
     return {
-      positions: new Float32Array(positions),
+      edgeIndices,
       colors: new Float32Array(colors),
       visibleCount,
     }
-  }, [edges, nodeById, selectedNode, connectedIds, relationshipVisibility, linkOpacity, focusStates, pathEdgeKeys, timeTravelActive, timeTravelVisibleNodes, tagFilteredNodeIds, hasTagFilter])
+  }, [edges, nodeById, nodeIdToIdx, selectedNode, relationshipVisibility, linkOpacity, focusStates, pathEdgeKeys, timeTravelActive, timeTravelVisibleNodes, tagFilteredNodeIds, hasTagFilter])
 
-  // Update geometry when positions/colors change
+  // Allocate position buffer once and keep it stable
+  const posBufferRef = useRef(new Float32Array(0))
   useEffect(() => {
-    if (!lineRef.current) return
+    const needed = visibleCount * 6
+    if (posBufferRef.current.length !== needed) {
+      posBufferRef.current = new Float32Array(needed)
+    }
+  }, [visibleCount])
+
+  // Update edge positions from animated positions each frame
+  useFrame(() => {
+    if (!lineRef.current || visibleCount === 0) return
+    const ap = animatedPositions.current
+    if (ap.length === 0) return
+
+    const posBuf = posBufferRef.current
+    for (let i = 0; i < edgeIndices.length; i++) {
+      const { srcIdx, tgtIdx } = edgeIndices[i]
+      const off = i * 6
+      posBuf[off] = ap[srcIdx * 3]
+      posBuf[off + 1] = ap[srcIdx * 3 + 1]
+      posBuf[off + 2] = ap[srcIdx * 3 + 2]
+      posBuf[off + 3] = ap[tgtIdx * 3]
+      posBuf[off + 4] = ap[tgtIdx * 3 + 1]
+      posBuf[off + 5] = ap[tgtIdx * 3 + 2]
+    }
 
     const geometry = lineRef.current.geometry
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    geometry.attributes.position.needsUpdate = true
-    geometry.attributes.color.needsUpdate = true
+    const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | null
+    if (!posAttr || posAttr.count !== visibleCount * 2) {
+      geometry.setAttribute('position', new THREE.BufferAttribute(posBuf, 3))
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    } else {
+      (posAttr.array as Float32Array).set(posBuf)
+      posAttr.needsUpdate = true
+    }
     geometry.computeBoundingSphere()
-  }, [positions, colors])
+  })
+
+  // Apply colors when they change
+  useEffect(() => {
+    if (!lineRef.current || visibleCount === 0) return
+    const geometry = lineRef.current.geometry
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    if (geometry.attributes.color) geometry.attributes.color.needsUpdate = true
+  }, [colors, visibleCount])
 
   if (visibleCount === 0) return null
 
@@ -1163,6 +1257,7 @@ function BatchedEdges({
  */
 interface InstancedNodesProps {
   nodes: SimulationNode[]
+  animatedPositions: React.MutableRefObject<Float32Array>
   selectedNode: GraphNode | null
   hoveredNode: GraphNode | null
   searchTerm: string
@@ -1185,6 +1280,7 @@ interface InstancedNodesProps {
 
 function InstancedNodes({
   nodes,
+  animatedPositions,
   selectedNode,
   hoveredNode,
   searchTerm,
@@ -1369,15 +1465,11 @@ function InstancedNodes({
       const isMatchingTagFilter = !hasTagFilterRef.current || (tagFilteredNodeIdsRef.current?.has(node.id) ?? true)
 
       const isDimmed = !!(
-        (selectedNode && !connectedIds.has(node.id)) ||
         (searchTerm && !matchingIds.has(node.id)) ||
-        // Dim non-path nodes when path is active
         (hasActivePath && !isInPath) ||
-        // Dim nodes not matching tag filter
         (hasTagFilterRef.current && !isMatchingTagFilter)
       )
 
-      // Get focus mode opacity
       const focusOpacity = focusStates.get(node.id)?.opacity ?? 1
 
       // Target scale based on state - path nodes get a size boost
@@ -1447,9 +1539,12 @@ function InstancedNodes({
       const breathing = 1 + Math.sin(breathingTime + nodePhase) * breathingAmplitude
       finalScale *= breathing
 
-      // Set position and scale (apply nodeSizeScale and deep-dive z-offset)
-      // z-offset moves node toward camera (positive z in screen space)
-      tempPosition.set(node.x ?? 0, node.y ?? 0, (node.z ?? 0) + newZOffset)
+      // Read from animated positions if available, else fall back to node coords
+      const ap = animatedPositions.current
+      const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0)
+      const py = ap.length > i * 3 + 1 ? ap[i * 3 + 1] : (node.y ?? 0)
+      const pz = ap.length > i * 3 + 2 ? ap[i * 3 + 2] : (node.z ?? 0)
+      tempPosition.set(px, py, pz + newZOffset)
       tempScale.setScalar(node.radius * finalScale * nodeSizeScale)
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale)
       mesh.setMatrixAt(i, tempMatrix)
