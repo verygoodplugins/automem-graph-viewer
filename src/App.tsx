@@ -394,12 +394,16 @@ export default function App() {
   }, [pathfinding.isSelectingTarget, pathfinding.completePathSelection, sound.playPathFound, sound.playSelect])
 
   const handleInspectorNavigate = useCallback((node: GraphNode | null) => {
-    if (node) {
-      sound.playSelect(node.importance ?? 0.5)
-      setSelectedNode(node)
+    if (!node) return
+
+    // Preserve path-selection behavior handled in handleNodeSelect.
+    handleNodeSelect(node)
+
+    // Keep camera navigation for normal inspector navigation.
+    if (!pathfinding.isSelectingTarget) {
       navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
     }
-  }, [sound.playSelect])
+  }, [handleNodeSelect, pathfinding.isSelectingTarget])
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
