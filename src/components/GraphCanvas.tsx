@@ -357,7 +357,9 @@ function Scene({
   const focusStates = useMemo(() => {
     const result = new Map<string, NodeFocusState>()
     if (!selectedNode) {
-      layoutNodes.forEach(n => result.set(n.id, { depth: -1, opacity: 1.0, isInFocus: true }))
+      layoutNodes.forEach(n => {
+        result.set(n.id, { depth: -1, opacity: 1.0, isInFocus: true })
+      })
       return result
     }
     const adjacency = new Map<string, Set<string>>()
