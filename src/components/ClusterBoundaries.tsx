@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { Cluster } from '../hooks/useClusterDetection'
+import type { Cluster } from '@/hooks/useClusterDetection'
 
 interface ClusterBoundariesProps {
   clusters: Cluster[]
@@ -10,6 +10,9 @@ interface ClusterBoundariesProps {
 }
 
 const FADE_SPEED = 3
+// Time (ms) for opacity to decay below 0.01 at 60fps with FADE_SPEED=3:
+// 0.3 * (1 - min(1, FADE_SPEED/60))^n < 0.01  →  n ≈ 67 frames ≈ 1200ms
+const FADE_DURATION_MS = 1200
 
 // Generate points on a sphere surface for dotted effect
 function generateSpherePoints(radius: number, count: number): Float32Array {
@@ -116,8 +119,8 @@ export function ClusterBoundaries({
       setDisplayClusters(clusters)
       return
     }
-    // Keep mounted long enough to fade to zero, then unmount
-    const timeout = window.setTimeout(() => setDisplayClusters([]), 350)
+    // Keep mounted long enough for opacity to fully decay, then unmount
+    const timeout = window.setTimeout(() => setDisplayClusters([]), FADE_DURATION_MS)
     return () => window.clearTimeout(timeout)
   }, [visible, clusters])
 

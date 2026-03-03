@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import type { SimulationNode, GraphEdge } from '../lib/types'
+import type { SimulationNode, GraphEdge } from '@/lib/types'
 
 interface PositionInterpolationConfig {
   lerpSpeed?: number

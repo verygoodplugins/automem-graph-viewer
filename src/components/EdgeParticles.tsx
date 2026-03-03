@@ -8,7 +8,7 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { GraphEdge, SimulationNode } from '../lib/types'
+import type { GraphEdge, SimulationNode } from '@/lib/types'
 
 interface EdgeParticlesProps {
   edges: GraphEdge[]
@@ -34,6 +34,8 @@ export function EdgeParticles({
   const pointsRef = useRef<THREE.Points>(null)
   const progressRef = useRef<Float32Array | null>(null)
   const edgeDataRef = useRef<{ start: THREE.Vector3; end: THREE.Vector3; speed: number; color: THREE.Color }[]>([])
+  // Store the actual clamped value so useFrame uses the same count as geometry creation
+  const actualParticlesPerEdgeRef = useRef(particlesPerEdge)
 
   // Build node position lookup
   const nodePositions = useMemo(() => {
@@ -55,6 +57,7 @@ export function EdgeParticles({
       particlesPerEdge,
       Math.floor(MAX_PARTICLES / edges.length)
     )
+    actualParticlesPerEdgeRef.current = actualParticlesPerEdge
     const count = Math.min(edges.length * actualParticlesPerEdge, MAX_PARTICLES)
 
     const positions = new Float32Array(count * 3)
@@ -130,7 +133,7 @@ export function EdgeParticles({
         const srcIdx = nodeIdToIdx.get(edge.source)
         const tgtIdx = nodeIdToIdx.get(edge.target)
         if (srcIdx === undefined || tgtIdx === undefined) continue
-        for (let j = 0; j < particlesPerEdge && edgeIndex < edgeData.length; j++) {
+        for (let j = 0; j < actualParticlesPerEdgeRef.current && edgeIndex < edgeData.length; j++) {
           edgeData[edgeIndex].start.set(ap[srcIdx * 3], ap[srcIdx * 3 + 1], ap[srcIdx * 3 + 2])
           edgeData[edgeIndex].end.set(ap[tgtIdx * 3], ap[tgtIdx * 3 + 1], ap[tgtIdx * 3 + 2])
           edgeIndex++
@@ -167,13 +170,13 @@ export function EdgeParticles({
 
       if (!startPos || !endPos) return
 
-      for (let i = 0; i < particlesPerEdge && edgeIndex < edgeDataRef.current.length; i++) {
+      for (let i = 0; i < actualParticlesPerEdgeRef.current && edgeIndex < edgeDataRef.current.length; i++) {
         edgeDataRef.current[edgeIndex].start.copy(startPos)
         edgeDataRef.current[edgeIndex].end.copy(endPos)
         edgeIndex++
       }
     })
-  }, [nodePositions, edges, particlesPerEdge])
+  }, [nodePositions, edges])
 
   if (!enabled || particleCount === 0) return null
 

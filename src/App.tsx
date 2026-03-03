@@ -762,7 +762,7 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden">
         <PanelGroup direction="horizontal" className="flex-1">
           {/* Graph Canvas */}
-          <Panel defaultSize={settingsPanelOpen ? 50 : 75} minSize={40}>
+          <Panel defaultSize={75} minSize={40}>
             <div ref={canvasContainerRef} className="h-full relative">
               {isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
@@ -927,7 +927,7 @@ export default function App() {
             ref={inspectorPanelRef}
             collapsible
             collapsedSize={0}
-            defaultSize={0}
+            defaultSize={25}
             minSize={15}
             maxSize={40}
             onExpand={() => setIsInspectorOpen(true)}
