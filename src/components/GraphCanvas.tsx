@@ -1217,17 +1217,22 @@ function InstancedNodes({
   }, [nodes])
 
   // Track pointer for click detection (distinguish click vs drag)
-  const pointerDownRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const pointerDownRef = useRef<{ x: number; y: number; time: number; button: number } | null>(null)
 
   // DOM-level click handling (bypasses R3F's event system which doesn't work with OrbitControls)
   useEffect(() => {
     const canvas = gl.domElement
 
     const handlePointerDown = (e: PointerEvent) => {
-      pointerDownRef.current = { x: e.clientX, y: e.clientY, time: Date.now() }
+      if (e.button !== 0) return
+      pointerDownRef.current = { x: e.clientX, y: e.clientY, time: Date.now(), button: e.button }
     }
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (e.button !== 0) {
+        pointerDownRef.current = null
+        return
+      }
       if (!meshRef.current || !pointerDownRef.current) return
 
       const dx = e.clientX - pointerDownRef.current.x
@@ -1552,35 +1557,11 @@ function InstancedNodes({
     [camera, pointer, raycaster, nodeIndexMap, onNodeContextMenu]
   )
 
-  // R3F onClick handler - uses R3F's event system which works with OrbitControls
-  const handleClick = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (!meshRef.current) return
-
-      raycaster.setFromCamera(pointer, camera)
-      const intersects = raycaster.intersectObject(meshRef.current)
-
-      if (intersects.length > 0) {
-        const instanceId = intersects[0].instanceId
-        if (instanceId !== undefined) {
-          const node = nodeIndexMap.get(instanceId)
-          if (node) {
-            event.stopPropagation()
-            // Toggle selection
-            onNodeSelect(selectedNode?.id === node.id ? null : node)
-          }
-        }
-      }
-    },
-    [camera, pointer, raycaster, nodeIndexMap, onNodeSelect, selectedNode]
-  )
-
   return (
     <instancedMesh
       key={`nodes-${nodeCount}`}
       ref={meshRef}
       args={[geometry, material, nodeCount]}
-      onClick={handleClick}
       onPointerMove={handlePointerMove}
       onContextMenu={handleContextMenu}
       frustumCulled={true}

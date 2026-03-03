@@ -14,6 +14,7 @@ interface UseKeyboardNavigationOptions {
   onQuickNavigate?: (index: number) => void
   onStartPathfinding?: () => void
   onCancelPathfinding?: () => void
+  onShowHelp?: () => void
   isPathSelecting?: boolean
   enabled?: boolean
 }
@@ -42,6 +43,7 @@ export function useKeyboardNavigation({
   onQuickNavigate,
   onStartPathfinding,
   onCancelPathfinding,
+  onShowHelp,
   isPathSelecting,
   enabled = true,
 }: UseKeyboardNavigationOptions) {
@@ -280,20 +282,7 @@ export function useKeyboardNavigation({
         '?': {
           description: 'Show help',
           action: () => {
-            // Could show a help modal in the future
-            console.log('Keyboard shortcuts:')
-            console.log('  Arrow keys: Navigate between nodes')
-            console.log('  Shift+Arrow Up/Down: Navigate in Z axis')
-            console.log('  Tab/Shift+Tab: Cycle through nodes')
-            console.log('  Escape: Deselect / Cancel pathfinding')
-            console.log('  P: Find path from selected node')
-            console.log('  R: Reheat simulation')
-            console.log('  Shift+R: Reset view')
-            console.log('  ,: Toggle settings')
-            console.log('  L: Toggle labels')
-            console.log('  F: Toggle focus mode')
-            console.log('  Cmd+B: Save bookmark')
-            console.log('  1-9: Quick navigate to bookmark')
+            onShowHelp?.()
           },
         },
       }
@@ -303,7 +292,7 @@ export function useKeyboardNavigation({
         shortcut.action()
       }
     },
-    [enabled, findNodeInDirection, navigateSequential, onNodeSelect, onReheat, onResetView, onToggleSettings, onToggleLabels, onToggleFocus, onSaveBookmark, onQuickNavigate, onStartPathfinding, onCancelPathfinding, isPathSelecting]
+    [enabled, findNodeInDirection, navigateSequential, onNodeSelect, onReheat, onResetView, onToggleSettings, onToggleLabels, onToggleFocus, onSaveBookmark, onQuickNavigate, onStartPathfinding, onCancelPathfinding, onShowHelp, isPathSelecting]
   )
 
   // Attach event listener
