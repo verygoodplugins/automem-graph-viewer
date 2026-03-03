@@ -57,6 +57,18 @@ function useIPhoneUrl() {
   return iphoneUrl
 }
 
+// Vibrant type colors for clear visual distinction on dark backgrounds
+const VIBRANT_TYPE_COLORS: Record<string, string> = {
+  Decision: '#f59e0b',
+  Pattern: '#10b981',
+  Insight: '#8b5cf6',
+  Preference: '#ec4899',
+  Context: '#3b82f6',
+  Style: '#06b6d4',
+  Habit: '#f97316',
+  Memory: '#6366f1',
+}
+
 // Performance constants
 const SPHERE_SEGMENTS = 12 // Reduced from 32 - good enough for small spheres
 const LABEL_DISTANCE_THRESHOLD = 80 // Only show labels for nodes within this distance
@@ -858,9 +870,9 @@ function Scene({
   return (
     <>
       {/* Ambient lighting */}
-      <ambientLight intensity={0.4} />
-      <pointLight position={[100, 100, 100]} intensity={0.8} />
-      <pointLight position={[-100, -100, -100]} intensity={0.4} color="#8B5CF6" />
+      <ambientLight intensity={0.6} />
+      <pointLight position={[100, 100, 100]} intensity={0.6} />
+      <pointLight position={[-100, -100, -100]} intensity={0.3} color="#8B5CF6" />
 
       {/* Camera controls */}
       <OrbitControls
@@ -976,9 +988,9 @@ function Scene({
       {!performanceMode && (
         <EffectComposer>
           <Bloom
-            luminanceThreshold={0.2}
+            luminanceThreshold={0.3}
             luminanceSmoothing={0.9}
-            intensity={0.8}
+            intensity={1.0}
             radius={0.8}
           />
           <Vignette eskil={false} offset={0.1} darkness={0.8} />
@@ -1097,7 +1109,7 @@ function BatchedEdges({
         // Path edges are always bright
         alpha = 1.0
       } else if (isDimmed) {
-        alpha *= 0.1
+        alpha *= 0.25
       } else if (isHighlighted) {
         alpha = Math.min(1, alpha * 1.5)
       }
@@ -1277,15 +1289,23 @@ function InstancedNodes({
 
   // Shared geometry and material - created once
   const geometry = useMemo(() => new THREE.SphereGeometry(1, SPHERE_SEGMENTS, SPHERE_SEGMENTS), [])
-  const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        roughness: 0.3,
-        metalness: 0.1,
-        transparent: true,
-      }),
-    []
-  )
+  const material = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      roughness: 0.35,
+      metalness: 0.05,
+      transparent: true,
+      emissive: new THREE.Color(0xffffff),
+      emissiveIntensity: 0.5,
+    })
+    mat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'vec3 totalEmissiveRadiance = emissive;',
+        'vec3 totalEmissiveRadiance = emissive * vColor;'
+      )
+    }
+    mat.customProgramCacheKey = () => 'instanced-emissive'
+    return mat
+  }, [])
 
   // Animation state - recreate when node count changes
   const nodeCount = nodes.length
@@ -1441,17 +1461,17 @@ function InstancedNodes({
         tempColor.set('#00d4ff')
       } else if (isLassoSelected) {
         // Lasso selected nodes: blue tint
-      tempColor.set(node.color)
+      tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color)
         // Add blue tint by lerping toward blue
         const blueColor = new THREE.Color('#3b82f6')
         tempColor.lerp(blueColor, 0.35)
       } else {
-        // Normal node color
-        tempColor.set(node.color)
+        // Use vibrant frontend palette, falling back to API color
+        tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color)
       }
 
       if (isDimmed && !isInPath && !isLassoSelected) {
-        tempColor.multiplyScalar(0.35) // was 0.15 - too aggressive
+        tempColor.multiplyScalar(0.5)
       } else if (isSelected || isHovered || isSearchMatch || isInPath || isLassoSelected) {
         // Brighten selected/hovered/path/lasso nodes
         tempColor.multiplyScalar(isInPath ? 1.3 : isLassoSelected ? 1.15 : 1.2)
