@@ -641,7 +641,7 @@ export default function App() {
     onCancelPathfinding: pathfinding.cancelPathSelection,
     onShowHelp: () => setShortcutsHelpOpen(true),
     isPathSelecting: pathfinding.isSelectingTarget,
-    enabled: true,
+    enabled: !shortcutsHelpOpen,
   })
 
   // Toggle tag cloud with 'T' key
@@ -804,6 +804,7 @@ export default function App() {
           onClick={() => setShortcutsHelpOpen(true)}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all duration-200"
           title="Keyboard shortcuts (?)"
+          aria-label="Open keyboard shortcuts help"
         >
           <Keyboard className="w-5 h-5" />
           <span className="text-sm font-medium hidden xl:inline">Shortcuts</span>
@@ -931,6 +932,7 @@ export default function App() {
                 onDelete={deleteBookmark}
                 onRename={handleRenameBookmark}
                 onSaveBookmark={handleSaveBookmark}
+                modifierLabel={keyboardModifierLabel}
                 visible={true}
               />
 

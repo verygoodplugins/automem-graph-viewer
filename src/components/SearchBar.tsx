@@ -16,6 +16,11 @@ export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
 
   // Debounce the onChange callback
   useEffect(() => {
+    if (localValue === '') {
+      onChange('')
+      return
+    }
+
     const timer = setTimeout(() => {
       onChange(localValue)
     }, 300)
@@ -30,9 +35,8 @@ export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
 
   const handleClear = useCallback(() => {
     setLocalValue('')
-    onChange('')
     inputRef.current?.focus()
-  }, [onChange])
+  }, [])
 
   // Global keyboard shortcuts: Cmd/Ctrl+K and /
   useEffect(() => {
@@ -44,9 +48,11 @@ export function SearchBar({ value, onChange, className = '' }: SearchBarProps) {
         (target instanceof HTMLElement && target.isContentEditable)
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        inputRef.current?.focus()
-        inputRef.current?.select()
+        if (!isTypingContext) {
+          event.preventDefault()
+          inputRef.current?.focus()
+          inputRef.current?.select()
+        }
         return
       }
 

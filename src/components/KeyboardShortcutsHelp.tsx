@@ -36,6 +36,9 @@ export function KeyboardShortcutsHelp({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="keyboard-shortcuts-title"
       className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
@@ -47,7 +50,7 @@ export function KeyboardShortcutsHelp({
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <div className="flex items-center gap-2 text-slate-200">
             <Keyboard className="h-4 w-4 text-blue-400" />
-            <h2 className="text-sm font-semibold">Keyboard Shortcuts</h2>
+            <h2 id="keyboard-shortcuts-title" className="text-sm font-semibold">Keyboard Shortcuts</h2>
           </div>
           <button
             onClick={onClose}
@@ -62,6 +65,9 @@ export function KeyboardShortcutsHelp({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {shortcuts.map((shortcut) => (
               <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="keyboard-shortcuts-title"
                 key={shortcut.key}
                 className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2"
               >

@@ -17,6 +17,7 @@ interface BookmarksPanelProps {
   onDelete: (id: string) => void
   onRename: (id: string, name: string) => void
   onSaveBookmark: () => void
+  modifierLabel: string
   visible?: boolean
 }
 
@@ -26,12 +27,12 @@ export function BookmarksPanel({
   onDelete,
   onRename,
   onSaveBookmark,
+  modifierLabel,
   visible = true,
 }: BookmarksPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
-  const modifierLabel = navigator.platform.toLowerCase().includes('mac') ? 'Cmd' : 'Ctrl'
 
   const handleStartEdit = useCallback((bookmark: Bookmark) => {
     setEditingId(bookmark.id)

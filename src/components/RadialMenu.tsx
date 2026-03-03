@@ -178,15 +178,13 @@ export function RadialMenu({
     })
   }
 
-  if (onCopyId) {
-    menuItems.push({
-      id: 'copy-id',
-      icon: <Copy className="w-5 h-5" />,
-      label: 'Copy ID',
-      color: 'from-slate-500 to-gray-500',
-      action: handleCopyId,
-    })
-  }
+  menuItems.push({
+    id: 'copy-id',
+    icon: <Copy className="w-5 h-5" />,
+    label: 'Copy ID',
+    color: 'from-slate-500 to-gray-500',
+    action: handleCopyId,
+  })
 
   if (onDelete) {
     menuItems.push({
