@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Cluster } from '../hooks/useClusterDetection'
@@ -107,15 +107,19 @@ export function ClusterBoundaries({
   visible,
   opacity = 0.3,
 }: ClusterBoundariesProps) {
-  // Keep rendering during fade-out (clusters stay mounted until opacity reaches ~0)
-  const [prevClusters, setPrevClusters] = useState<Cluster[]>([])
-  const displayClusters = visible ? clusters : prevClusters
+  const [displayClusters, setDisplayClusters] = useState<Cluster[]>(() =>
+    visible ? clusters : []
+  )
 
-  useFrame(() => {
-    if (visible && clusters !== prevClusters) {
-      setPrevClusters(clusters)
+  useEffect(() => {
+    if (visible) {
+      setDisplayClusters(clusters)
+      return
     }
-  })
+    // Keep mounted long enough to fade to zero, then unmount
+    const timeout = window.setTimeout(() => setDisplayClusters([]), 350)
+    return () => window.clearTimeout(timeout)
+  }, [visible, clusters])
 
   if (displayClusters.length === 0) return null
 

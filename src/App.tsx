@@ -556,14 +556,14 @@ export default function App() {
     setDisplayConfig(prev => ({ ...prev, ...config }))
   }, [])
 
+  const prevClusterModeRef = useRef<ClusterConfig['mode']>(DEFAULT_CLUSTER_CONFIG.mode)
+
   const handleClusterConfigChange = useCallback((config: Partial<ClusterConfig>) => {
-    setClusterConfig(prev => {
-      const next = { ...prev, ...config }
-      if (config.mode && config.mode !== prev.mode) {
-        showStatus(CLUSTER_MODE_LABELS[config.mode] || `Cluster mode: ${config.mode}`)
-      }
-      return next
-    })
+    setClusterConfig(prev => ({ ...prev, ...config }))
+    if (config.mode && config.mode !== prevClusterModeRef.current) {
+      prevClusterModeRef.current = config.mode
+      showStatus(CLUSTER_MODE_LABELS[config.mode] || `Cluster mode: ${config.mode}`)
+    }
   }, [showStatus])
 
   const handleRelationshipVisibilityChange = useCallback((visibility: Partial<RelationshipVisibility>) => {

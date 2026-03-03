@@ -351,7 +351,7 @@ function Scene({
   onBimanualGrabChange,
 }: SceneProps) {
   const { camera } = useThree()
-  const { nodes: layoutNodes, isSimulating, reheat } = useForceLayout({ nodes, edges, forceConfig })
+  const { nodes: layoutNodes, isSimulating, reheat, layoutTick } = useForceLayout({ nodes, edges, forceConfig })
 
   // Depth-based selection dimming: auto-spotlight when a node is selected
   const focusStates = useMemo(() => {
@@ -406,7 +406,7 @@ function Scene({
     targetPositions: animTargets,
     basePositions: animBase,
     nodeIdToIdx,
-  } = usePositionInterpolation(layoutNodes, { lerpSpeed: 5 })
+  } = usePositionInterpolation(layoutNodes, { lerpSpeed: 5, layoutTick })
 
   // Compute cluster centroid assignments for force attraction
   const clusterAssignments = useMemo(() => {
@@ -446,7 +446,7 @@ function Scene({
         0.5
       )
     }
-  }, [selectedNode, clusterConfig.mode, clusterConfig.clusterStrength, clusterAssignments, layoutNodes, edges, nodeIdToIdx, animBase, animTargets])
+  }, [selectedNode, clusterConfig.mode, clusterConfig.clusterStrength, clusterAssignments, layoutNodes, edges, nodeIdToIdx, animBase, animTargets, layoutTick])
 
   // Expose reheat function to parent
   useEffect(() => {
@@ -511,12 +511,10 @@ function Scene({
   const getNodesInPolygon = useCallback((polygon: { x: number; y: number }[]) => {
     if (polygon.length < 3) return []
 
-    // Get the canvas size from the renderer
     const canvas = document.querySelector('canvas')
     if (!canvas) return []
     const rect = canvas.getBoundingClientRect()
 
-    // Point-in-polygon test using ray casting
     const isPointInPolygon = (point: { x: number; y: number }) => {
       let inside = false
       const n = polygon.length
@@ -532,10 +530,13 @@ function Scene({
       return inside
     }
 
-    // Project each node to screen space and check if inside polygon
+    const ap = animPositions.current
     const result: string[] = []
-    layoutNodes.forEach((node) => {
-      const worldPos = new THREE.Vector3(node.x ?? 0, node.y ?? 0, node.z ?? 0)
+    layoutNodes.forEach((node, i) => {
+      const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0)
+      const py = ap.length > i * 3 + 1 ? ap[i * 3 + 1] : (node.y ?? 0)
+      const pz = ap.length > i * 3 + 2 ? ap[i * 3 + 2] : (node.z ?? 0)
+      const worldPos = new THREE.Vector3(px, py, pz)
       const projected = worldPos.project(camera)
       const screenX = ((projected.x + 1) / 2) * rect.width
       const screenY = ((-projected.y + 1) / 2) * rect.height
@@ -546,7 +547,7 @@ function Scene({
     })
 
     return result
-  }, [layoutNodes, camera])
+  }, [layoutNodes, camera, animPositions])
 
   // Expose getNodesInPolygon to parent
   useEffect(() => {
@@ -895,9 +896,13 @@ function Scene({
     let nearestNode: SimulationNode | null = null
     let nearestDist = Infinity
 
-    for (const n of layoutNodes) {
-      // Get node world position (accounting for group transform)
-      const worldPos = new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0)
+    const ap = animPositions.current
+    for (let ni = 0; ni < layoutNodes.length; ni++) {
+      const n = layoutNodes[ni]
+      const px = ap.length > ni * 3 ? ap[ni * 3] : (n.x ?? 0)
+      const py = ap.length > ni * 3 + 1 ? ap[ni * 3 + 1] : (n.y ?? 0)
+      const pz = ap.length > ni * 3 + 2 ? ap[ni * 3 + 2] : (n.z ?? 0)
+      const worldPos = new THREE.Vector3(px, py, pz)
       group.localToWorld(worldPos)
 
       // Project to screen coordinates
@@ -997,6 +1002,8 @@ function Scene({
           nodes={layoutNodes}
           enabled={!performanceMode}
           particlesPerEdge={2}
+          animatedPositions={animPositions}
+          nodeIdToIdx={nodeIdToIdx}
         />
 
         {/* Instanced nodes - single draw call for all nodes */}
@@ -1029,6 +1036,8 @@ function Scene({
             node={selectedLayoutNode}
             innerRadius={selectedLayoutNode.radius * displayConfig.nodeSizeScale * 1.3}
             outerRadius={selectedLayoutNode.radius * displayConfig.nodeSizeScale * 1.8}
+            animatedPositions={animPositions}
+            nodeIdToIdx={nodeIdToIdx}
           />
         )}
 
@@ -1045,6 +1054,8 @@ function Scene({
           <ConnectedPathsHighlight
             selectedNode={selectedNode}
             connectedNodes={connectedNodes}
+            animatedPositions={animPositions}
+            nodeIdToIdx={nodeIdToIdx}
           />
         )}
 
@@ -1057,6 +1068,8 @@ function Scene({
           searchTerm={searchTerm}
             labelFadeDistance={displayConfig.labelFadeDistance}
           matchingIds={matchingIds}
+          animatedPositions={animPositions}
+          nodeIdToIdx={nodeIdToIdx}
         />
         )}
 
@@ -1675,6 +1688,8 @@ interface LODLabelsProps {
   searchTerm: string
   matchingIds: Set<string>
   labelFadeDistance?: number
+  animatedPositions: React.MutableRefObject<Float32Array>
+  nodeIdToIdx: Map<string, number>
 }
 
 function LODLabels({
@@ -1684,19 +1699,21 @@ function LODLabels({
   searchTerm,
   matchingIds,
   labelFadeDistance = LABEL_DISTANCE_THRESHOLD,
+  animatedPositions,
+  nodeIdToIdx,
 }: LODLabelsProps) {
   const { camera } = useThree()
   const [visibleNodes, setVisibleNodes] = useState<SimulationNode[]>([])
 
-  // Update visible labels based on camera distance
+  // Update visible labels based on camera distance (uses animated positions)
   useFrame(() => {
     const cameraPos = camera.position
+    const ap = animatedPositions.current
 
-    // Always show selected and hovered nodes
     const priorityNodes: SimulationNode[] = []
     const nearbyNodes: { node: SimulationNode; distance: number }[] = []
 
-    nodes.forEach((node) => {
+    nodes.forEach((node, i) => {
       const isSelected = selectedNode?.id === node.id
       const isHovered = hoveredNode?.id === node.id
       const isSearchMatch = !!searchTerm && matchingIds.has(node.id)
@@ -1706,19 +1723,19 @@ function LODLabels({
         return
       }
 
-      // Calculate distance to camera
-      const dx = (node.x ?? 0) - cameraPos.x
-      const dy = (node.y ?? 0) - cameraPos.y
-      const dz = (node.z ?? 0) - cameraPos.z
+      const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0)
+      const py = ap.length > i * 3 + 1 ? ap[i * 3 + 1] : (node.y ?? 0)
+      const pz = ap.length > i * 3 + 2 ? ap[i * 3 + 2] : (node.z ?? 0)
+      const dx = px - cameraPos.x
+      const dy = py - cameraPos.y
+      const dz = pz - cameraPos.z
       const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
-      // Include search matches and nearby nodes
       if (distance < labelFadeDistance || isSearchMatch) {
         nearbyNodes.push({ node, distance })
       }
     })
 
-    // Sort by distance and limit
     nearbyNodes.sort((a, b) => a.distance - b.distance)
     const nearbyToShow = nearbyNodes
       .slice(0, MAX_VISIBLE_LABELS - priorityNodes.length)
@@ -1735,6 +1752,8 @@ function LODLabels({
           node={node}
           isSelected={selectedNode?.id === node.id}
           isHovered={hoveredNode?.id === node.id}
+          animatedPositions={animatedPositions}
+          nodeIdToIdx={nodeIdToIdx}
         />
       ))}
     </>
@@ -1745,39 +1764,56 @@ interface NodeLabelProps {
   node: SimulationNode
   isSelected: boolean
   isHovered: boolean
+  animatedPositions: React.MutableRefObject<Float32Array>
+  nodeIdToIdx: Map<string, number>
 }
 
-function NodeLabel({ node, isSelected, isHovered }: NodeLabelProps) {
-  // Truncate content for label
+function NodeLabel({ node, isSelected, isHovered, animatedPositions, nodeIdToIdx }: NodeLabelProps) {
+  const groupRef = useRef<THREE.Group>(null)
+
   const label = useMemo(() => {
     const text = node.content.slice(0, 30)
     return text.length < node.content.length ? text + '...' : text
   }, [node.content])
 
+  // Track animated position each frame
+  useFrame(() => {
+    if (!groupRef.current) return
+    const idx = nodeIdToIdx.get(node.id)
+    if (idx === undefined) return
+    const ap = animatedPositions.current
+    const off = idx * 3
+    if (off + 2 < ap.length) {
+      groupRef.current.position.set(ap[off], ap[off + 1] + node.radius * 3 + 3, ap[off + 2])
+    }
+  })
+
   return (
-    <Billboard position={[node.x ?? 0, (node.y ?? 0) + node.radius * 3 + 3, node.z ?? 0]}>
-      <Text
-        fontSize={2.5}
-        maxWidth={30}
-        color="#f1f5f9"
-        anchorX="center"
-        anchorY="bottom"
-        outlineWidth={0.1}
-        outlineColor="#000000"
-      >
-        {label}
-      </Text>
-      {(isSelected || isHovered) && (
+    <group ref={groupRef} position={[node.x ?? 0, (node.y ?? 0) + node.radius * 3 + 3, node.z ?? 0]}>
+      <Billboard>
         <Text
-          position={[0, -1.5, 0]}
-          fontSize={1.5}
-          color="#94a3b8"
+          fontSize={2.5}
+          maxWidth={30}
+          color="#f1f5f9"
           anchorX="center"
-          anchorY="top"
+          anchorY="bottom"
+          outlineWidth={0.1}
+          outlineColor="#000000"
         >
-          {node.type}
+          {label}
         </Text>
-      )}
-    </Billboard>
+        {(isSelected || isHovered) && (
+          <Text
+            position={[0, -1.5, 0]}
+            fontSize={1.5}
+            color="#94a3b8"
+            anchorX="center"
+            anchorY="top"
+          >
+            {node.type}
+          </Text>
+        )}
+      </Billboard>
+    </group>
   )
 }

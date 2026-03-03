@@ -4,6 +4,7 @@ import type { SimulationNode, GraphEdge } from '../lib/types'
 
 interface PositionInterpolationConfig {
   lerpSpeed?: number
+  layoutTick?: number
 }
 
 /**
@@ -15,7 +16,7 @@ export function usePositionInterpolation(
   layoutNodes: SimulationNode[],
   config: PositionInterpolationConfig = {}
 ) {
-  const { lerpSpeed = 5 } = config
+  const { lerpSpeed = 5, layoutTick = 0 } = config
   const nodeCount = layoutNodes.length
 
   const currentPositions = useRef(new Float32Array(0))
@@ -28,7 +29,9 @@ export function usePositionInterpolation(
   // Node ID to array index mapping
   const nodeIdToIdx = useMemo(() => {
     const map = new Map<string, number>()
-    layoutNodes.forEach((n, i) => map.set(n.id, i))
+    layoutNodes.forEach((n, i) => {
+      map.set(n.id, i)
+    })
     return map
   }, [layoutNodes])
 
@@ -43,7 +46,7 @@ export function usePositionInterpolation(
     }
   }, [nodeCount])
 
-  // Update base and target positions when layout changes
+  // Update base and target positions when layout changes or simulation ticks
   useEffect(() => {
     for (let i = 0; i < layoutNodes.length; i++) {
       const n = layoutNodes[i]
@@ -57,7 +60,7 @@ export function usePositionInterpolation(
       currentPositions.current.set(basePositions.current)
       initializedRef.current = true
     }
-  }, [layoutNodes])
+  }, [layoutNodes, layoutTick])
 
   // Lerp current positions toward targets each frame
   useFrame((_, delta) => {
@@ -81,6 +84,24 @@ export function usePositionInterpolation(
     basePositions,
     nodeIdToIdx,
   }
+}
+
+/**
+ * Read the current animated position for a node by index.
+ * Falls back to (0,0,0) if index is out of range.
+ */
+export function readAnimatedPosition(
+  positions: Float32Array,
+  idx: number,
+  out: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 }
+) {
+  const off = idx * 3
+  if (off + 2 < positions.length) {
+    out.x = positions[off]
+    out.y = positions[off + 1]
+    out.z = positions[off + 2]
+  }
+  return out
 }
 
 /**

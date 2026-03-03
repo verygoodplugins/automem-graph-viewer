@@ -15,6 +15,8 @@ interface EdgeParticlesProps {
   nodes: SimulationNode[]
   enabled?: boolean
   particlesPerEdge?: number
+  animatedPositions?: React.MutableRefObject<Float32Array>
+  nodeIdToIdx?: Map<string, number>
 }
 
 // Maximum particles to render for performance
@@ -26,6 +28,8 @@ export function EdgeParticles({
   nodes,
   enabled = true,
   particlesPerEdge = 3,
+  animatedPositions,
+  nodeIdToIdx,
 }: EdgeParticlesProps) {
   const pointsRef = useRef<THREE.Points>(null)
   const progressRef = useRef<Float32Array | null>(null)
@@ -110,24 +114,37 @@ export function EdgeParticles({
     return { geometry: geo, particleCount: particleIndex }
   }, [edges, nodePositions, enabled, particlesPerEdge])
 
-  // Animate particles along edges
+  // Animate particles along edges (using animated positions when available)
   useFrame((_, delta) => {
     if (!enabled || !pointsRef.current || !progressRef.current || particleCount === 0) return
 
     const positions = pointsRef.current.geometry.attributes.position
     const progress = progressRef.current
     const edgeData = edgeDataRef.current
+    const ap = animatedPositions?.current
+
+    // If animated positions available, update edge start/end from them
+    if (ap && ap.length > 0 && nodeIdToIdx) {
+      let edgeIndex = 0
+      for (const edge of edges) {
+        const srcIdx = nodeIdToIdx.get(edge.source)
+        const tgtIdx = nodeIdToIdx.get(edge.target)
+        if (srcIdx === undefined || tgtIdx === undefined) continue
+        for (let j = 0; j < particlesPerEdge && edgeIndex < edgeData.length; j++) {
+          edgeData[edgeIndex].start.set(ap[srcIdx * 3], ap[srcIdx * 3 + 1], ap[srcIdx * 3 + 2])
+          edgeData[edgeIndex].end.set(ap[tgtIdx * 3], ap[tgtIdx * 3 + 1], ap[tgtIdx * 3 + 2])
+          edgeIndex++
+        }
+      }
+    }
 
     for (let i = 0; i < particleCount; i++) {
-      // Update progress
       progress[i] += delta * edgeData[i].speed
 
-      // Loop back when reaching the end
       if (progress[i] > 1) {
         progress[i] = progress[i] % 1
       }
 
-      // Interpolate position along edge
       const p = progress[i]
       const { start, end } = edgeData[i]
 
