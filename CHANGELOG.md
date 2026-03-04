@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog, and this project uses
 [Conventional Commits](https://www.conventionalcommits.org/) with Release Please.
 
+## [0.3.0](https://github.com/verygoodplugins/automem-graph-viewer/compare/automem-graph-viewer-v0.2.0...automem-graph-viewer-v0.3.0) (2026-03-04)
+
+
+### Features
+
+* unified filtering, relationship exploration & breadcrumb navigation ([#10](https://github.com/verygoodplugins/automem-graph-viewer/issues/10)) ([e58af6f](https://github.com/verygoodplugins/automem-graph-viewer/commit/e58af6f56b5836773ad3f80a6252b093eb701551))
+* UX overhaul - animated transitions, selection gravity, remove focus mode ([#9](https://github.com/verygoodplugins/automem-graph-viewer/issues/9)) ([5a10938](https://github.com/verygoodplugins/automem-graph-viewer/commit/5a10938d0cc1025ac2a5f7db2ee163c428e23bad))
+
+
+### Bug Fixes
+
+* **ci:** fix CI workflow failing in 0s due to invalid hashFiles() usage ([#5](https://github.com/verygoodplugins/automem-graph-viewer/issues/5)) ([0363353](https://github.com/verygoodplugins/automem-graph-viewer/commit/0363353c1acdf8907110fa8d592474de02a63151))
+* improve graph viewer UX interactions and discoverability ([#7](https://github.com/verygoodplugins/automem-graph-viewer/issues/7)) ([bfaed26](https://github.com/verygoodplugins/automem-graph-viewer/commit/bfaed261584e8af14f5e7c54637c0096394e4788))
+
 ## [0.2.0](https://github.com/verygoodplugins/automem-graph-viewer/compare/automem-graph-viewer-v0.1.0...automem-graph-viewer-v0.2.0) (2026-02-20)
 
 
