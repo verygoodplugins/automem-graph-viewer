@@ -8,13 +8,15 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { GraphEdge, SimulationNode } from '../lib/types'
+import type { GraphEdge, SimulationNode } from '@/lib/types'
 
 interface EdgeParticlesProps {
   edges: GraphEdge[]
   nodes: SimulationNode[]
   enabled?: boolean
   particlesPerEdge?: number
+  animatedPositions?: React.MutableRefObject<Float32Array>
+  nodeIdToIdx?: Map<string, number>
 }
 
 // Maximum particles to render for performance
@@ -26,10 +28,14 @@ export function EdgeParticles({
   nodes,
   enabled = true,
   particlesPerEdge = 3,
+  animatedPositions,
+  nodeIdToIdx,
 }: EdgeParticlesProps) {
   const pointsRef = useRef<THREE.Points>(null)
   const progressRef = useRef<Float32Array | null>(null)
   const edgeDataRef = useRef<{ start: THREE.Vector3; end: THREE.Vector3; speed: number; color: THREE.Color }[]>([])
+  // Store the actual clamped value so useFrame uses the same count as geometry creation
+  const actualParticlesPerEdgeRef = useRef(particlesPerEdge)
 
   // Build node position lookup
   const nodePositions = useMemo(() => {
@@ -51,6 +57,7 @@ export function EdgeParticles({
       particlesPerEdge,
       Math.floor(MAX_PARTICLES / edges.length)
     )
+    actualParticlesPerEdgeRef.current = actualParticlesPerEdge
     const count = Math.min(edges.length * actualParticlesPerEdge, MAX_PARTICLES)
 
     const positions = new Float32Array(count * 3)
@@ -110,24 +117,37 @@ export function EdgeParticles({
     return { geometry: geo, particleCount: particleIndex }
   }, [edges, nodePositions, enabled, particlesPerEdge])
 
-  // Animate particles along edges
+  // Animate particles along edges (using animated positions when available)
   useFrame((_, delta) => {
     if (!enabled || !pointsRef.current || !progressRef.current || particleCount === 0) return
 
     const positions = pointsRef.current.geometry.attributes.position
     const progress = progressRef.current
     const edgeData = edgeDataRef.current
+    const ap = animatedPositions?.current
+
+    // If animated positions available, update edge start/end from them
+    if (ap && ap.length > 0 && nodeIdToIdx) {
+      let edgeIndex = 0
+      for (const edge of edges) {
+        const srcIdx = nodeIdToIdx.get(edge.source)
+        const tgtIdx = nodeIdToIdx.get(edge.target)
+        if (srcIdx === undefined || tgtIdx === undefined) continue
+        for (let j = 0; j < actualParticlesPerEdgeRef.current && edgeIndex < edgeData.length; j++) {
+          edgeData[edgeIndex].start.set(ap[srcIdx * 3], ap[srcIdx * 3 + 1], ap[srcIdx * 3 + 2])
+          edgeData[edgeIndex].end.set(ap[tgtIdx * 3], ap[tgtIdx * 3 + 1], ap[tgtIdx * 3 + 2])
+          edgeIndex++
+        }
+      }
+    }
 
     for (let i = 0; i < particleCount; i++) {
-      // Update progress
       progress[i] += delta * edgeData[i].speed
 
-      // Loop back when reaching the end
       if (progress[i] > 1) {
         progress[i] = progress[i] % 1
       }
 
-      // Interpolate position along edge
       const p = progress[i]
       const { start, end } = edgeData[i]
 
@@ -150,13 +170,13 @@ export function EdgeParticles({
 
       if (!startPos || !endPos) return
 
-      for (let i = 0; i < particlesPerEdge && edgeIndex < edgeDataRef.current.length; i++) {
+      for (let i = 0; i < actualParticlesPerEdgeRef.current && edgeIndex < edgeDataRef.current.length; i++) {
         edgeDataRef.current[edgeIndex].start.copy(startPos)
         edgeDataRef.current[edgeIndex].end.copy(endPos)
         edgeIndex++
       }
     })
-  }, [nodePositions, edges, particlesPerEdge])
+  }, [nodePositions, edges])
 
   if (!enabled || particleCount === 0) return null
 

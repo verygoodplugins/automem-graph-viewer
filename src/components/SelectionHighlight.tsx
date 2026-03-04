@@ -108,6 +108,8 @@ interface SelectionHighlightProps {
   color?: string
   innerRadius?: number
   outerRadius?: number
+  animatedPositions?: React.MutableRefObject<Float32Array>
+  nodeIdToIdx?: Map<string, number>
 }
 
 /**
@@ -119,18 +121,33 @@ export function SelectionHighlight({
   color,
   innerRadius = 1.2,
   outerRadius = 1.8,
+  animatedPositions,
+  nodeIdToIdx,
 }: SelectionHighlightProps) {
   const ringRef = useRef<THREE.Mesh>(null)
   const glowRef = useRef<THREE.Mesh>(null)
+  const groupRef = useRef<THREE.Group>(null)
 
   // Ring geometry
   const ringGeometry = useMemo(() => {
     return new THREE.RingGeometry(innerRadius, outerRadius, 32)
   }, [innerRadius, outerRadius])
 
-  // Pulsing animation
+  // Pulsing animation + position tracking from animated positions
   useFrame((state) => {
     if (!node || !ringRef.current || !glowRef.current) return
+
+    // Update group position from animated positions if available
+    if (groupRef.current && animatedPositions && nodeIdToIdx) {
+      const idx = nodeIdToIdx.get(node.id)
+      if (idx !== undefined) {
+        const ap = animatedPositions.current
+        const off = idx * 3
+        if (off + 2 < ap.length) {
+          groupRef.current.position.set(ap[off], ap[off + 1], ap[off + 2])
+        }
+      }
+    }
 
     const t = state.clock.elapsedTime
 
@@ -154,7 +171,7 @@ export function SelectionHighlight({
   const nodeRadius = node.radius || 3
 
   return (
-    <group position={[node.x || 0, node.y || 0, node.z || 0]}>
+    <group ref={groupRef} position={[node.x || 0, node.y || 0, node.z || 0]}>
       {/* Inner glow sphere */}
       <mesh ref={glowRef}>
         <sphereGeometry args={[nodeRadius * 1.5, 16, 16]} />
@@ -198,6 +215,8 @@ interface ConnectedPathsHighlightProps {
   selectedNode: GraphNode | null
   connectedNodes: SimulationNode[]
   color?: string
+  animatedPositions?: React.MutableRefObject<Float32Array>
+  nodeIdToIdx?: Map<string, number>
 }
 
 /**
@@ -208,6 +227,8 @@ export function ConnectedPathsHighlight({
   selectedNode,
   connectedNodes,
   color,
+  animatedPositions,
+  nodeIdToIdx,
 }: ConnectedPathsHighlightProps) {
   const particlesRef = useRef<THREE.Points>(null)
 
@@ -257,7 +278,7 @@ export function ConnectedPathsHighlight({
     return { positions, colors }
   }, [selectedNode, connectedNodes, color])
 
-  // Animate particles flowing along paths
+  // Animate particles flowing along paths using animated positions when available
   useFrame((state) => {
     if (!particlesRef.current || !selectedNode || connectedNodes.length === 0) return
 
@@ -267,24 +288,28 @@ export function ConnectedPathsHighlight({
 
     if (!positionAttr || positionAttr.count === 0) return
 
-    const selectedPos = {
-      x: (selectedNode as SimulationNode).x || 0,
-      y: (selectedNode as SimulationNode).y || 0,
-      z: (selectedNode as SimulationNode).z || 0,
-    }
+    const ap = animatedPositions?.current
+    const selIdx = nodeIdToIdx?.get(selectedNode.id)
+    const selectedPos =
+      ap && selIdx !== undefined && selIdx * 3 + 2 < ap.length
+        ? { x: ap[selIdx * 3], y: ap[selIdx * 3 + 1], z: ap[selIdx * 3 + 2] }
+        : {
+            x: (selectedNode as SimulationNode).x || 0,
+            y: (selectedNode as SimulationNode).y || 0,
+            z: (selectedNode as SimulationNode).z || 0,
+          }
 
     const particlesPerPath = 5
 
     connectedNodes.forEach((node, nodeIndex) => {
-      const targetPos = {
-        x: node.x || 0,
-        y: node.y || 0,
-        z: node.z || 0,
-      }
+      const nIdx = nodeIdToIdx?.get(node.id)
+      const targetPos =
+        ap && nIdx !== undefined && nIdx * 3 + 2 < ap.length
+          ? { x: ap[nIdx * 3], y: ap[nIdx * 3 + 1], z: ap[nIdx * 3 + 2] }
+          : { x: node.x || 0, y: node.y || 0, z: node.z || 0 }
 
       for (let i = 0; i < particlesPerPath; i++) {
         const idx = nodeIndex * particlesPerPath + i
-        // Flow along path with offset per particle
         const baseT = (i + 1) / (particlesPerPath + 1)
         const flowT = (baseT + (t * 0.5) % 1) % 1
 
@@ -304,18 +329,20 @@ export function ConnectedPathsHighlight({
     return null
   }
 
+  const particleCount = positions.length / 3
+
   return (
-    <points ref={particlesRef}>
+    <points ref={particlesRef} key={particleCount}>
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={positions.length / 3}
+          count={particleCount}
           array={positions}
           itemSize={3}
         />
         <bufferAttribute
           attach="attributes-color"
-          count={colors.length / 3}
+          count={particleCount}
           array={colors}
           itemSize={3}
         />

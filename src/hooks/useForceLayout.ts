@@ -147,8 +147,9 @@ export function useForceLayout({
   nodes,
   edges,
   forceConfig = DEFAULT_FORCE_CONFIG,
-}: UseForceLayoutOptions): LayoutState & { reheat: () => void } {
+}: UseForceLayoutOptions): LayoutState & { reheat: () => void; layoutTick: number } {
   const [isSimulating, setIsSimulating] = useState(false)
+  const [layoutTick, setLayoutTick] = useState(0)
 
   // Use useMemo to compute layout synchronously, with module-level caching
   // This approach is immune to React Strict Mode double-invocation
@@ -181,8 +182,21 @@ export function useForceLayout({
     if (layoutCache.simulation) {
       layoutCache.simulation.alpha(0.5).restart()
       setIsSimulating(true)
+
+      // Poll the simulation and bump layoutTick so consumers re-sync positions
+      const poll = () => {
+        if (!layoutCache.simulation) return
+        const alpha = layoutCache.simulation.alpha()
+        setLayoutTick(t => t + 1)
+        if (alpha > 0.01) {
+          requestAnimationFrame(poll)
+        } else {
+          setIsSimulating(false)
+        }
+      }
+      requestAnimationFrame(poll)
     }
   }, [])
 
-  return { nodes: layoutNodes, isSimulating, reheat }
+  return { nodes: layoutNodes, isSimulating, reheat, layoutTick }
 }
