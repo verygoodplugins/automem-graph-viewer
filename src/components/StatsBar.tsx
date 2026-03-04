@@ -10,9 +10,11 @@ interface StatsBarProps {
     sample_ratio: number
   }
   isLoading: boolean
+  clientVisibleCount?: number
+  hasClientFilter?: boolean
 }
 
-export function StatsBar({ stats, isLoading }: StatsBarProps) {
+export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter }: StatsBarProps) {
   if (isLoading || !stats) {
     return (
       <div className="flex items-center gap-4 text-sm text-slate-500">
@@ -24,16 +26,32 @@ export function StatsBar({ stats, isLoading }: StatsBarProps) {
     )
   }
 
+  // Client filter active: "Showing 42 of 500 memories"
+  const showFilteredCount = hasClientFilter && clientVisibleCount != null
+
   return (
     <div className="flex items-center gap-4 text-sm">
       <div className="flex items-center gap-1.5 text-slate-400">
         <Database className="w-4 h-4 text-blue-400" />
         <span>
-          <span className="text-slate-200">{stats.returned_nodes.toLocaleString()}</span>
-          {stats.sampled && (
-            <span className="text-slate-500">
-              {' '}/ {stats.total_nodes.toLocaleString()}
-            </span>
+          {showFilteredCount ? (
+            <>
+              <span className="text-blue-300">
+                {clientVisibleCount.toLocaleString()}
+              </span>
+              <span className="text-slate-500">
+                {' '}of {stats.returned_nodes.toLocaleString()}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-slate-200">{stats.returned_nodes.toLocaleString()}</span>
+              {stats.sampled && (
+                <span className="text-slate-500">
+                  {' '}/ {stats.total_nodes.toLocaleString()}
+                </span>
+              )}
+            </>
           )}
         </span>
       </div>

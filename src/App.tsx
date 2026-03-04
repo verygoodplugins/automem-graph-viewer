@@ -10,6 +10,7 @@ import { Inspector } from './components/Inspector'
 import { SearchBar } from './components/SearchBar'
 import { TokenPrompt } from './components/TokenPrompt'
 import { StatsBar } from './components/StatsBar'
+import { Breadcrumbs } from './components/Breadcrumbs'
 import { GestureDebugOverlay } from './components/GestureDebugOverlay'
 import { Hand2DOverlay } from './components/Hand2DOverlay'
 import { HandControlOverlay } from './components/HandControlOverlay'
@@ -26,6 +27,8 @@ import { useHandLockAndGrab } from './hooks/useHandLockAndGrab'
 import { useHandRecording, downloadRecording, listSavedRecordings, loadRecordingFromStorage } from './hooks/useHandRecording'
 import { useHandPlayback } from './hooks/useHandPlayback'
 import { useTagCloud } from './hooks/useTagCloud'
+import { useFilterChips } from './hooks/useFilterChips'
+import { useBreadcrumbs } from './hooks/useBreadcrumbs'
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
 import { useBookmarks, type Bookmark } from './hooks/useBookmarks'
 import { usePathfinding } from './hooks/usePathfinding'
@@ -33,6 +36,7 @@ import { useTimeTravel } from './hooks/useTimeTravel'
 import { useSoundEffects } from './hooks/useSoundEffects'
 import type {
   GraphNode,
+  RelationType,
   FilterState,
   ForceConfig,
   DisplayConfig,
@@ -325,6 +329,59 @@ export default function App() {
     typeColors: data?.meta?.type_colors,
   })
 
+  // Breadcrumbs (node selection history)
+  const breadcrumbs = useBreadcrumbs()
+
+  // Tag color map for filter chips (tag → color from dominant type)
+  const tagColorMap = useMemo(() => {
+    const map = new Map<string, string>()
+    const typeColors = data?.meta?.type_colors
+    if (!typeColors) return map
+    for (const tagData of tagCloud.tags) {
+      map.set(tagData.tag, typeColors[tagData.dominantType] ?? '#94A3B8')
+    }
+    return map
+  }, [tagCloud.tags, data?.meta?.type_colors])
+
+  // Filter chip callbacks (extracted to top level per Rules of Hooks)
+  const { deselectTag, clearSelection } = tagCloud
+  const handleClearSearch = useCallback(() => setSearchTerm(''), [])
+  const handleClearAllFilters = useCallback(() => {
+    clearSelection()
+    setSearchTerm('')
+  }, [clearSelection])
+
+  // Filter chips (derived from search + tags)
+  const filterChips = useFilterChips({
+    searchTerm,
+    selectedTags: tagCloud.selectedTags,
+    tagColorMap,
+    onDeselectTag: deselectTag,
+    onClearSearch: handleClearSearch,
+    onClearAll: handleClearAllFilters,
+  })
+
+  // Client-visible node count (intersection of tag filter + search filter)
+  const clientVisibleNodeCount = useMemo(() => {
+    if (!filterChips.hasActiveFilters) return nodes.length
+    let filtered = nodes
+    // Apply tag filter
+    if (tagCloud.hasActiveFilter) {
+      filtered = filtered.filter((n) => tagCloud.filteredNodeIds.has(n.id))
+    }
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const lower = searchTerm.toLowerCase()
+      filtered = filtered.filter(
+        (n) =>
+          n.content.toLowerCase().includes(lower) ||
+          n.type.toLowerCase().includes(lower) ||
+          n.tags.some((t) => t.toLowerCase().includes(lower))
+      )
+    }
+    return filtered.length
+  }, [nodes, tagCloud.hasActiveFilter, tagCloud.filteredNodeIds, searchTerm, filterChips.hasActiveFilters])
+
   // Sound Effects
   const sound = useSoundEffects()
 
@@ -408,6 +465,7 @@ export default function App() {
     }
   }, [getBookmarkByIndex, handleNavigateToBookmark])
 
+  const { push: breadcrumbPush } = breadcrumbs
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
     // If we're in path selection mode and a node is clicked, complete the path
     if (pathfinding.isSelectingTarget && node) {
@@ -417,9 +475,10 @@ export default function App() {
     }
     if (node) {
       sound.playSelect(node.importance ?? 0.5)
+      breadcrumbPush(node)
     }
     setSelectedNode(node)
-  }, [pathfinding.isSelectingTarget, pathfinding.completePathSelection, sound.playPathFound, sound.playSelect])
+  }, [pathfinding.isSelectingTarget, pathfinding.completePathSelection, sound.playPathFound, sound.playSelect, breadcrumbPush])
 
   const handleInspectorNavigate = useCallback((node: GraphNode | null) => {
     if (!node) return
@@ -544,6 +603,20 @@ export default function App() {
     setSearchTerm(term)
   }, [sound.playSearch])
 
+  // Inspector tag click: add tag filter + close inspector + reheat
+  const { selectTag } = tagCloud
+  const handleInspectorTagClick = useCallback((tag: string) => {
+    selectTag(tag)
+    setSelectedNode(null) // auto-close inspector to show filtered graph
+    reheatFn?.()
+    showStatus(`Filter: ${tag}`)
+  }, [selectTag, reheatFn, showStatus])
+
+  // Inspector relationship type toggle
+  const handleRelationshipTypeClick = useCallback((type: RelationType) => {
+    setRelationshipVisibility((prev) => ({ ...prev, [type]: !prev[type] }))
+  }, [])
+
   const handleFilterChange = useCallback((newFilters: Partial<FilterState>) => {
     setFilters(prev => ({ ...prev, ...newFilters }))
   }, [])
@@ -618,6 +691,54 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // Shared breadcrumb navigation callback (used by keyboard + Breadcrumbs component)
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+
+  const breadcrumbNavigate = useCallback((node: GraphNode) => {
+    setSelectedNode(node)
+    navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
+  }, [])
+
+  const handleBreadcrumbBack = useCallback(() => {
+    breadcrumbs.goBack(nodesRef.current, breadcrumbNavigate)
+  }, [breadcrumbs.goBack, breadcrumbNavigate])
+
+  const handleBreadcrumbForward = useCallback(() => {
+    breadcrumbs.goForward(nodesRef.current, breadcrumbNavigate)
+  }, [breadcrumbs.goForward, breadcrumbNavigate])
+
+  const handleBreadcrumbJumpTo = useCallback((index: number) => {
+    breadcrumbs.jumpTo(index, nodesRef.current, breadcrumbNavigate)
+  }, [breadcrumbs.jumpTo, breadcrumbNavigate])
+
+  // Breadcrumb keyboard shortcuts: Cmd+[ back, Cmd+] forward
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (!(e.metaKey || e.ctrlKey)) return
+
+      if (e.key === '[') {
+        e.preventDefault()
+        handleBreadcrumbBack()
+      } else if (e.key === ']') {
+        e.preventDefault()
+        handleBreadcrumbForward()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleBreadcrumbBack, handleBreadcrumbForward])
+
+  // Filter-triggered reheat: when tag filter activates/deactivates, reheat physics
+  const prevHasTagFilter = useRef(tagCloud.hasActiveFilter)
+  useEffect(() => {
+    if (tagCloud.hasActiveFilter !== prevHasTagFilter.current) {
+      prevHasTagFilter.current = tagCloud.hasActiveFilter
+      reheatFn?.()
+    }
+  }, [tagCloud.hasActiveFilter, reheatFn])
+
   if (!isAuthenticated) {
     return <TokenPrompt onSubmit={setToken} />
   }
@@ -640,9 +761,19 @@ export default function App() {
           onChange={handleSearch}
           className="flex-1 max-w-xl min-w-[220px]"
           shortcutsEnabled={!shortcutsHelpOpen}
+          chips={filterChips.chips}
+          onRemoveChip={filterChips.removeChip}
+          onClearAll={filterChips.clearAll}
+          matchingCount={clientVisibleNodeCount}
+          totalCount={nodes.length}
         />
 
-        <StatsBar stats={data?.stats} isLoading={isLoading} />
+        <StatsBar
+          stats={data?.stats}
+          isLoading={isLoading}
+          clientVisibleCount={clientVisibleNodeCount}
+          hasClientFilter={filterChips.hasActiveFilters}
+        />
 
         {/* Performance Mode Toggle */}
         <button
@@ -757,6 +888,18 @@ export default function App() {
           </span>
         </button>
       </header>
+
+      {/* Breadcrumbs (node selection history) */}
+      <Breadcrumbs
+        history={breadcrumbs.history}
+        currentIndex={breadcrumbs.currentIndex}
+        nodes={nodes}
+        canGoBack={breadcrumbs.canGoBack}
+        canGoForward={breadcrumbs.canGoForward}
+        onGoBack={handleBreadcrumbBack}
+        onGoForward={handleBreadcrumbForward}
+        onJumpTo={handleBreadcrumbJumpTo}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
@@ -940,6 +1083,9 @@ export default function App() {
               onNavigate={handleInspectorNavigate}
               onStartPathfinding={pathfinding.startPathSelection}
               isPathSelecting={pathfinding.isSelectingTarget}
+              onTagClick={handleInspectorTagClick}
+              onRelationshipTypeClick={handleRelationshipTypeClick}
+              relationshipVisibility={relationshipVisibility}
             />
           </Panel>
         </PanelGroup>
