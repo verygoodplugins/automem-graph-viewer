@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Search, X } from 'lucide-react'
-import type { FilterChip } from '../hooks/useFilterChips'
+import type { FilterChip } from '@/hooks/useFilterChips'
 
 interface SearchBarProps {
   value: string

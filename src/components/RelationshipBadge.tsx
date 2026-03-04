@@ -5,8 +5,8 @@
  * strength bar, and is clickable to toggle relationship visibility.
  */
 
-import type { RelationType } from '../lib/types'
-import { EDGE_STYLES, type EdgeStyle } from '../lib/edgeStyles'
+import type { RelationType } from '@/lib/types'
+import { EDGE_STYLES, type EdgeStyle } from '@/lib/edgeStyles'
 
 export type Direction = 'outgoing' | 'incoming' | 'bidirectional'
 

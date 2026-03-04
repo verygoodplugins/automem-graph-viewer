@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
 import { X, Clock, Tag, ArrowRight, Sparkles, Edit2, Save, Trash2, Route, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useGraphNeighbors } from '../hooks/useGraphData'
-import { updateMemory, deleteMemory } from '../api/client'
-import { RelationshipBadge, type Direction } from './RelationshipBadge'
-import { EDGE_STYLES, CATEGORY_COLORS } from '../lib/edgeStyles'
-import type { GraphNode, RelationType, RelationshipVisibility } from '../lib/types'
+import { useGraphNeighbors } from '@/hooks/useGraphData'
+import { updateMemory, deleteMemory } from '@/api/client'
+import { RelationshipBadge, type Direction } from '@/components/RelationshipBadge'
+import { EDGE_STYLES, CATEGORY_COLORS } from '@/lib/edgeStyles'
+import type { GraphNode, RelationType, RelationshipVisibility } from '@/lib/types'
 
 interface InspectorProps {
   node: GraphNode | null
@@ -91,17 +91,11 @@ export function Inspector({
 
       // Determine direction
       const isOutgoing = edge.source === node.id
-      // Check for bidirectional: is there an edge going the opposite way between same pair?
-      const hasReverse = neighbors.edges.some(
-        (e) =>
-          e !== edge &&
-          e.source === neighbor.id && e.target === node.id
-      ) || neighbors.edges.some(
-        (e) =>
-          e !== edge &&
-          e.source === node.id && e.target === neighbor.id
-      )
-      const direction: Direction = (isOutgoing && hasReverse)
+      // Check for bidirectional: is there an edge in the opposite direction?
+      const hasReverse = isOutgoing
+        ? neighbors.edges.some((e) => e !== edge && e.source === neighbor.id && e.target === node.id)
+        : neighbors.edges.some((e) => e !== edge && e.source === node.id && e.target === neighbor.id)
+      const direction: Direction = (hasReverse)
         ? 'bidirectional'
         : isOutgoing
           ? 'outgoing'
@@ -156,6 +150,25 @@ export function Inspector({
     return Array.from(types)
   }, [groupedNeighbors])
 
+  const totalNeighborCount = neighbors?.graph_neighbors.length ?? 0
+
+  // Pre-compute visible neighbor groups respecting the limit
+  const visibleGroups = useMemo(() => {
+    if (!groupedNeighbors) return []
+    const limit = showAllNeighbors ? Infinity : DEFAULT_NEIGHBOR_LIMIT
+    let rendered = 0
+    const result: Array<{ category: string; neighbors: Array<{ neighbor: GraphNode; edge: { type: RelationType; source: string; target: string; strength: number }; direction: Direction }> }> = []
+
+    for (const [category, { neighbors: categoryNeighbors }] of groupedNeighbors) {
+      if (rendered >= limit) break
+      const remaining = limit - rendered
+      const visible = categoryNeighbors.slice(0, remaining)
+      rendered += visible.length
+      result.push({ category, neighbors: visible })
+    }
+    return result
+  }, [groupedNeighbors, showAllNeighbors])
+
   if (!node) {
     return (
       <div className="h-full glass flex flex-col items-center justify-center p-6 text-center">
@@ -181,8 +194,6 @@ export function Inspector({
       minute: '2-digit',
     })
   })()
-
-  const totalNeighborCount = neighbors?.graph_neighbors.length ?? 0
 
   return (
     <div className="h-full glass flex flex-col overflow-hidden">
@@ -353,72 +364,59 @@ export function Inspector({
               </div>
             )}
 
-            {(() => {
-              const limit = showAllNeighbors ? Infinity : DEFAULT_NEIGHBOR_LIMIT
-              let rendered = 0
+            {visibleGroups.map(({ category, neighbors: visible }) => (
+              <div key={category} className="mb-3">
+                {/* Category header */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: CATEGORY_COLORS[category as keyof typeof CATEGORY_COLORS] }}
+                  />
+                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                    {CATEGORY_LABELS[category] ?? category}
+                  </span>
+                </div>
 
-              return Array.from(groupedNeighbors.entries()).map(([category, { neighbors: categoryNeighbors }]) => {
-                if (rendered >= limit) return null
+                <div className="space-y-1.5">
+                  {visible.map(({ neighbor, edge, direction }) => {
+                    const isVisible = relationshipVisibility
+                      ? relationshipVisibility[edge.type] !== false
+                      : true
 
-                const remaining = limit - rendered
-                const visible = categoryNeighbors.slice(0, remaining)
-                rendered += visible.length
-
-                return (
-                  <div key={category} className="mb-3">
-                    {/* Category header */}
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: CATEGORY_COLORS[category as keyof typeof CATEGORY_COLORS] }}
-                      />
-                      <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
-                        {CATEGORY_LABELS[category] ?? category}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      {visible.map(({ neighbor, edge, direction }) => {
-                        const isVisible = relationshipVisibility
-                          ? relationshipVisibility[edge.type] !== false
-                          : true
-
-                        return (
-                          <div key={neighbor.id} className="flex items-start gap-1">
-                            <button
-                              type="button"
-                              onClick={() => onNavigate(neighbor)}
-                              className="flex-1 flex items-start gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left group min-w-0"
-                            >
-                              <div
-                                className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                                style={{ backgroundColor: neighbor.color }}
+                    return (
+                      <div key={neighbor.id} className="flex items-start gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onNavigate(neighbor)}
+                          className="flex-1 flex items-start gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left group min-w-0"
+                        >
+                          <div
+                            className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ backgroundColor: neighbor.color }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="mb-0.5">
+                              {/* Render as span inside button to avoid nested buttons */}
+                              <RelationshipBadge
+                                type={edge.type}
+                                direction={direction}
+                                strength={edge.strength}
+                                isVisible={isVisible}
                               />
-                              <div className="flex-1 min-w-0">
-                                <div className="mb-0.5">
-                                  {/* Render as span inside button to avoid nested buttons */}
-                                  <RelationshipBadge
-                                    type={edge.type}
-                                    direction={direction}
-                                    strength={edge.strength}
-                                    isVisible={isVisible}
-                                  />
-                                </div>
-                                <div className="text-sm text-slate-200 line-clamp-2">
-                                  {neighbor.content.slice(0, 80)}
-                                  {neighbor.content.length > 80 && '...'}
-                                </div>
-                              </div>
-                              <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 flex-shrink-0" />
-                            </button>
+                            </div>
+                            <div className="text-sm text-slate-200 line-clamp-2">
+                              {neighbor.content.slice(0, 80)}
+                              {neighbor.content.length > 80 && '...'}
+                            </div>
                           </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })
-            })()}
+                          <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 flex-shrink-0" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
 
             {/* Show more / less toggle */}
             {totalNeighborCount > DEFAULT_NEIGHBOR_LIMIT && (

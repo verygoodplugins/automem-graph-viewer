@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react'
-import type { GraphNode } from '../lib/types'
+import type { GraphNode } from '@/lib/types'
 
 export interface BreadcrumbEntry {
   nodeId: string
@@ -71,32 +71,29 @@ export function useBreadcrumbs(): UseBreadcrumbsReturn {
   }, [])
 
   const goBack = useCallback((nodes: GraphNode[], onNavigate: (node: GraphNode) => void) => {
-    setState((prev) => {
-      if (prev.currentIndex <= 0) return prev
-      const newIndex = prev.currentIndex - 1
-      const node = resolveNode(prev.history[newIndex].nodeId, nodes)
-      if (node) onNavigate(node)
-      return { ...prev, currentIndex: newIndex }
-    })
+    const prev = stateRef.current
+    if (prev.currentIndex <= 0) return
+    const newIndex = prev.currentIndex - 1
+    setState({ ...prev, currentIndex: newIndex })
+    const node = resolveNode(prev.history[newIndex].nodeId, nodes)
+    if (node) onNavigate(node)
   }, [])
 
   const goForward = useCallback((nodes: GraphNode[], onNavigate: (node: GraphNode) => void) => {
-    setState((prev) => {
-      if (prev.currentIndex >= prev.history.length - 1) return prev
-      const newIndex = prev.currentIndex + 1
-      const node = resolveNode(prev.history[newIndex].nodeId, nodes)
-      if (node) onNavigate(node)
-      return { ...prev, currentIndex: newIndex }
-    })
+    const prev = stateRef.current
+    if (prev.currentIndex >= prev.history.length - 1) return
+    const newIndex = prev.currentIndex + 1
+    setState({ ...prev, currentIndex: newIndex })
+    const node = resolveNode(prev.history[newIndex].nodeId, nodes)
+    if (node) onNavigate(node)
   }, [])
 
   const jumpTo = useCallback((index: number, nodes: GraphNode[], onNavigate: (node: GraphNode) => void) => {
-    setState((prev) => {
-      if (index < 0 || index >= prev.history.length) return prev
-      const node = resolveNode(prev.history[index].nodeId, nodes)
-      if (node) onNavigate(node)
-      return { ...prev, currentIndex: index }
-    })
+    const prev = stateRef.current
+    if (index < 0 || index >= prev.history.length) return
+    setState({ ...prev, currentIndex: index })
+    const node = resolveNode(prev.history[index].nodeId, nodes)
+    if (node) onNavigate(node)
   }, [])
 
   const clear = useCallback(() => {

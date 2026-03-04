@@ -8,8 +8,8 @@
 
 import { useRef, useEffect, useMemo } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import type { BreadcrumbEntry } from '../hooks/useBreadcrumbs'
-import type { GraphNode } from '../lib/types'
+import type { BreadcrumbEntry } from '@/hooks/useBreadcrumbs'
+import type { GraphNode } from '@/lib/types'
 
 interface BreadcrumbsProps {
   history: BreadcrumbEntry[]
