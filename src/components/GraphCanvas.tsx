@@ -1136,16 +1136,17 @@ function BatchedEdges({
   // Max possible edges (stable across selection changes)
   const maxEdges = edges.length
 
-  // Pre-allocate position and color buffers to max size so they never resize
+  // Ensure buffers are sized before color writes in the useMemo below.
   const posBufferRef = useRef(new Float32Array(0))
   const colorBufferRef = useRef(new Float32Array(0))
-  useEffect(() => {
-    const needed = maxEdges * 6
-    if (posBufferRef.current.length !== needed) {
-      posBufferRef.current = new Float32Array(needed)
-      colorBufferRef.current = new Float32Array(needed)
-    }
-  }, [maxEdges])
+  const neededEdgeBufferSize = maxEdges * 6
+  if (
+    posBufferRef.current.length !== neededEdgeBufferSize ||
+    colorBufferRef.current.length !== neededEdgeBufferSize
+  ) {
+    posBufferRef.current = new Float32Array(neededEdgeBufferSize)
+    colorBufferRef.current = new Float32Array(neededEdgeBufferSize)
+  }
 
   // Compute visible edges, their colors, and source/target node indices
   const { edgeIndices, visibleCount } = useMemo(() => {
@@ -1728,6 +1729,7 @@ function LODLabels({
 }: LODLabelsProps) {
   const { camera } = useThree()
   const [visibleNodes, setVisibleNodes] = useState<SimulationNode[]>([])
+  const prevVisibleIdsRef = useRef<string[]>([])
 
   // Update visible labels based on camera distance (uses animated positions)
   useFrame(() => {
@@ -1764,8 +1766,17 @@ function LODLabels({
     const nearbyToShow = nearbyNodes
       .slice(0, MAX_VISIBLE_LABELS - priorityNodes.length)
       .map((n) => n.node)
+    const nextVisibleNodes = [...priorityNodes, ...nearbyToShow]
+    const nextVisibleIds = nextVisibleNodes.map((node) => node.id)
+    const prevVisibleIds = prevVisibleIdsRef.current
+    const hasChanged =
+      nextVisibleIds.length !== prevVisibleIds.length ||
+      nextVisibleIds.some((id, index) => id !== prevVisibleIds[index])
 
-    setVisibleNodes([...priorityNodes, ...nearbyToShow])
+    if (hasChanged) {
+      prevVisibleIdsRef.current = nextVisibleIds
+      setVisibleNodes(nextVisibleNodes)
+    }
   })
 
   return (
