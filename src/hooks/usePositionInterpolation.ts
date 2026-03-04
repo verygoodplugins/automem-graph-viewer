@@ -100,6 +100,10 @@ export function readAnimatedPosition(
     out.x = positions[off]
     out.y = positions[off + 1]
     out.z = positions[off + 2]
+  } else {
+    out.x = 0
+    out.y = 0
+    out.z = 0
   }
   return out
 }

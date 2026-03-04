@@ -539,6 +539,7 @@ function Scene({
       const py = ap.length > i * 3 + 1 ? ap[i * 3 + 1] : (node.y ?? 0)
       const pz = ap.length > i * 3 + 2 ? ap[i * 3 + 2] : (node.z ?? 0)
       const worldPos = new THREE.Vector3(px, py, pz)
+      if (groupRef.current) groupRef.current.localToWorld(worldPos)
       const projected = worldPos.project(camera)
       const screenX = ((projected.x + 1) / 2) * rect.width
       const screenY = ((-projected.y + 1) / 2) * rect.height
@@ -1231,20 +1232,32 @@ function BatchedEdges({
 
   // Update edge positions and colors from animated positions each frame
   useFrame(() => {
-    if (!lineRef.current || visibleCount === 0) return
+    if (!lineRef.current) return
     const ap = animatedPositions.current
-    if (ap.length === 0) return
+    if (visibleCount === 0 || ap.length === 0) {
+      lineRef.current.geometry.setDrawRange(0, 0)
+      lineRef.current.geometry.computeBoundingSphere()
+      return
+    }
 
     const posBuf = posBufferRef.current
     for (let i = 0; i < edgeIndices.length; i++) {
       const { srcIdx, tgtIdx } = edgeIndices[i]
       const off = i * 6
-      posBuf[off] = ap[srcIdx * 3]
-      posBuf[off + 1] = ap[srcIdx * 3 + 1]
-      posBuf[off + 2] = ap[srcIdx * 3 + 2]
-      posBuf[off + 3] = ap[tgtIdx * 3]
-      posBuf[off + 4] = ap[tgtIdx * 3 + 1]
-      posBuf[off + 5] = ap[tgtIdx * 3 + 2]
+      if (srcIdx * 3 + 2 < ap.length) {
+        posBuf[off] = ap[srcIdx * 3]
+        posBuf[off + 1] = ap[srcIdx * 3 + 1]
+        posBuf[off + 2] = ap[srcIdx * 3 + 2]
+      } else {
+        posBuf[off] = 0; posBuf[off + 1] = 0; posBuf[off + 2] = 0
+      }
+      if (tgtIdx * 3 + 2 < ap.length) {
+        posBuf[off + 3] = ap[tgtIdx * 3]
+        posBuf[off + 4] = ap[tgtIdx * 3 + 1]
+        posBuf[off + 5] = ap[tgtIdx * 3 + 2]
+      } else {
+        posBuf[off + 3] = 0; posBuf[off + 4] = 0; posBuf[off + 5] = 0
+      }
     }
 
     const geometry = lineRef.current.geometry
