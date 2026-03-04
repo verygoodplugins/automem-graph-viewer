@@ -1132,10 +1132,24 @@ function BatchedEdges({
 }: BatchedEdgesProps) {
   const lineRef = useRef<THREE.LineSegments>(null)
 
+  // Max possible edges (stable across selection changes)
+  const maxEdges = edges.length
+
+  // Pre-allocate position and color buffers to max size so they never resize
+  const posBufferRef = useRef(new Float32Array(0))
+  const colorBufferRef = useRef(new Float32Array(0))
+  useEffect(() => {
+    const needed = maxEdges * 6
+    if (posBufferRef.current.length !== needed) {
+      posBufferRef.current = new Float32Array(needed)
+      colorBufferRef.current = new Float32Array(needed)
+    }
+  }, [maxEdges])
+
   // Compute visible edges, their colors, and source/target node indices
-  const { edgeIndices, colors, visibleCount } = useMemo(() => {
+  const { edgeIndices, visibleCount } = useMemo(() => {
     const edgeIndices: { srcIdx: number; tgtIdx: number }[] = []
-    const colors: number[] = []
+    const colorBuf = colorBufferRef.current
     let visibleCount = 0
 
     edges.forEach((edge) => {
@@ -1157,6 +1171,7 @@ function BatchedEdges({
         if (!tagFilteredNodeIds.has(edge.source) && !tagFilteredNodeIds.has(edge.target)) return
       }
 
+      const slotIdx = visibleCount
       visibleCount++
       edgeIndices.push({ srcIdx, tgtIdx })
 
@@ -1194,26 +1209,27 @@ function BatchedEdges({
       const r = color.r * alpha
       const g = color.g * alpha
       const b = color.b * alpha
-      colors.push(r, g, b, r, g, b)
+      const off = slotIdx * 6
+      colorBuf[off] = r; colorBuf[off + 1] = g; colorBuf[off + 2] = b
+      colorBuf[off + 3] = r; colorBuf[off + 4] = g; colorBuf[off + 5] = b
     })
 
-    return {
-      edgeIndices,
-      colors: new Float32Array(colors),
-      visibleCount,
-    }
+    return { edgeIndices, visibleCount }
   }, [edges, nodeById, nodeIdToIdx, selectedNode, relationshipVisibility, linkOpacity, focusStates, pathEdgeKeys, timeTravelActive, timeTravelVisibleNodes, tagFilteredNodeIds, hasTagFilter])
 
-  // Allocate position buffer once and keep it stable
-  const posBufferRef = useRef(new Float32Array(0))
+  // Set up geometry once with max-sized buffers, use setDrawRange for visibility
+  const initializedRef = useRef(false)
   useEffect(() => {
-    const needed = visibleCount * 6
-    if (posBufferRef.current.length !== needed) {
-      posBufferRef.current = new Float32Array(needed)
+    if (!lineRef.current || maxEdges === 0) return
+    const geometry = lineRef.current.geometry
+    if (!initializedRef.current || geometry.getAttribute('position')?.count !== maxEdges * 2) {
+      geometry.setAttribute('position', new THREE.BufferAttribute(posBufferRef.current, 3))
+      geometry.setAttribute('color', new THREE.BufferAttribute(colorBufferRef.current, 3))
+      initializedRef.current = true
     }
-  }, [visibleCount])
+  }, [maxEdges])
 
-  // Update edge positions from animated positions each frame
+  // Update edge positions and colors from animated positions each frame
   useFrame(() => {
     if (!lineRef.current || visibleCount === 0) return
     const ap = animatedPositions.current
@@ -1232,26 +1248,19 @@ function BatchedEdges({
     }
 
     const geometry = lineRef.current.geometry
-    const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | null
-    if (!posAttr || posAttr.count !== visibleCount * 2) {
-      geometry.setAttribute('position', new THREE.BufferAttribute(posBuf, 3))
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    } else {
-      (posAttr.array as Float32Array).set(posBuf)
+    const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute
+    const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute
+    if (posAttr) {
       posAttr.needsUpdate = true
     }
+    if (colorAttr) {
+      colorAttr.needsUpdate = true
+    }
+    geometry.setDrawRange(0, visibleCount * 2)
     geometry.computeBoundingSphere()
   })
 
-  // Apply colors when they change
-  useEffect(() => {
-    if (!lineRef.current || visibleCount === 0) return
-    const geometry = lineRef.current.geometry
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    if (geometry.attributes.color) geometry.attributes.color.needsUpdate = true
-  }, [colors, visibleCount])
-
-  if (visibleCount === 0) return null
+  if (maxEdges === 0) return null
 
   return (
     <lineSegments ref={lineRef}>

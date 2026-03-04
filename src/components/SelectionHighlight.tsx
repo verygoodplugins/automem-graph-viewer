@@ -329,18 +329,20 @@ export function ConnectedPathsHighlight({
     return null
   }
 
+  const particleCount = positions.length / 3
+
   return (
-    <points ref={particlesRef}>
+    <points ref={particlesRef} key={particleCount}>
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={positions.length / 3}
+          count={particleCount}
           array={positions}
           itemSize={3}
         />
         <bufferAttribute
           attach="attributes-color"
-          count={colors.length / 3}
+          count={particleCount}
           array={colors}
           itemSize={3}
         />
