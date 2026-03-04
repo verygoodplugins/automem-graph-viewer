@@ -72,3 +72,12 @@ body {
 .animate-dash {
   animation: dash 0.5s linear infinite;
 }
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

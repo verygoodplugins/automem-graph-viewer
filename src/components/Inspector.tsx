@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { X, Clock, Tag, ArrowRight, Sparkles, Edit2, Save, Trash2, Route } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { X, Clock, Tag, ArrowRight, Sparkles, Edit2, Save, Trash2, Route, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useGraphNeighbors } from '../hooks/useGraphData'
-import { updateMemory, deleteMemory } from '../api/client'
-import type { GraphNode } from '../lib/types'
+import { useGraphNeighbors } from '@/hooks/useGraphData'
+import { updateMemory, deleteMemory } from '@/api/client'
+import { RelationshipBadge, type Direction } from '@/components/RelationshipBadge'
+import { EDGE_STYLES, CATEGORY_COLORS } from '@/lib/edgeStyles'
+import type { GraphNode, RelationType, RelationshipVisibility } from '@/lib/types'
 
 interface InspectorProps {
   node: GraphNode | null
@@ -11,11 +13,34 @@ interface InspectorProps {
   onNavigate: (node: GraphNode) => void
   onStartPathfinding?: (nodeId: string) => void
   isPathSelecting?: boolean
+  onTagClick?: (tag: string) => void
+  onRelationshipTypeClick?: (type: RelationType) => void
+  relationshipVisibility?: RelationshipVisibility
 }
 
-export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPathSelecting }: InspectorProps) {
+const CATEGORY_LABELS: Record<string, string> = {
+  causal: 'Causal / Flow',
+  temporal: 'Temporal',
+  associative: 'Associative',
+  conflict: 'Conflict',
+  hierarchical: 'Hierarchy',
+}
+
+const DEFAULT_NEIGHBOR_LIMIT = 5
+
+export function Inspector({
+  node,
+  onClose,
+  onNavigate,
+  onStartPathfinding,
+  isPathSelecting,
+  onTagClick,
+  onRelationshipTypeClick,
+  relationshipVisibility,
+}: InspectorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedImportance, setEditedImportance] = useState(0)
+  const [showAllNeighbors, setShowAllNeighbors] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: neighbors } = useGraphNeighbors(node?.id ?? null, {
@@ -41,6 +66,50 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
     },
   })
 
+  // Group neighbors by edge category
+  const groupedNeighbors = useMemo(() => {
+    if (!neighbors?.edges || !node) return null
+
+    const groups = new Map<string, {
+      neighbors: Array<{
+        neighbor: (typeof neighbors.graph_neighbors)[0]
+        edge: (typeof neighbors.edges)[0]
+        direction: Direction
+      }>
+    }>()
+
+    for (const neighbor of neighbors.graph_neighbors) {
+      const edge = neighbors.edges.find(
+        (e) =>
+          (e.source === node.id && e.target === neighbor.id) ||
+          (e.target === node.id && e.source === neighbor.id)
+      )
+      if (!edge) continue
+
+      const style = EDGE_STYLES[edge.type] ?? EDGE_STYLES.RELATES_TO
+      const category = style.category
+
+      // Determine direction
+      const isOutgoing = edge.source === node.id
+      // Check for bidirectional: is there an edge in the opposite direction?
+      const hasReverse = isOutgoing
+        ? neighbors.edges.some((e) => e !== edge && e.source === neighbor.id && e.target === node.id)
+        : neighbors.edges.some((e) => e !== edge && e.source === node.id && e.target === neighbor.id)
+      const direction: Direction = (hasReverse)
+        ? 'bidirectional'
+        : isOutgoing
+          ? 'outgoing'
+          : 'incoming'
+
+      if (!groups.has(category)) {
+        groups.set(category, { neighbors: [] })
+      }
+      groups.get(category)!.neighbors.push({ neighbor, edge, direction })
+    }
+
+    return groups
+  }, [neighbors, node])
+
   const handleStartEdit = () => {
     if (node) {
       setEditedImportance(node.importance)
@@ -62,6 +131,43 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
       deleteMutation.mutate(node.id)
     }
   }
+
+  const handleTagClick = (tag: string) => {
+    if (onTagClick) {
+      onTagClick(tag)
+    }
+  }
+
+  // Unique edge types present in this node's relationships (for filter strip)
+  const uniqueEdgeTypes = useMemo(() => {
+    if (!groupedNeighbors) return []
+    const types = new Set<RelationType>()
+    for (const [, { neighbors: items }] of groupedNeighbors) {
+      for (const { edge } of items) {
+        types.add(edge.type)
+      }
+    }
+    return Array.from(types)
+  }, [groupedNeighbors])
+
+  const totalNeighborCount = neighbors?.graph_neighbors.length ?? 0
+
+  // Pre-compute visible neighbor groups respecting the limit
+  const visibleGroups = useMemo(() => {
+    if (!groupedNeighbors) return []
+    const limit = showAllNeighbors ? Infinity : DEFAULT_NEIGHBOR_LIMIT
+    let rendered = 0
+    const result: Array<{ category: string; neighbors: Array<{ neighbor: GraphNode; edge: { type: RelationType; source: string; target: string; strength: number }; direction: Direction }> }> = []
+
+    for (const [category, { neighbors: categoryNeighbors }] of groupedNeighbors) {
+      if (rendered >= limit) break
+      const remaining = limit - rendered
+      const visible = categoryNeighbors.slice(0, remaining)
+      rendered += visible.length
+      result.push({ category, neighbors: visible })
+    }
+    return result
+  }, [groupedNeighbors, showAllNeighbors])
 
   if (!node) {
     return (
@@ -129,7 +235,7 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
           </p>
         </div>
 
-        {/* Tags */}
+        {/* Tags — clickable */}
         {node.tags.length > 0 && (
           <div>
             <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
@@ -137,13 +243,25 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
             </h4>
             <div className="flex flex-wrap gap-1.5">
               {node.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded text-xs text-slate-300"
-                >
-                  <Tag className="w-3 h-3" />
-                  {tag}
-                </span>
+                onTagClick ? (
+                  <button
+                    key={tag}
+                    onClick={() => handleTagClick(tag)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded text-xs text-slate-300 hover:bg-white/15 hover:ring-1 hover:ring-white/20 transition-all cursor-pointer group"
+                  >
+                    <Tag className="w-3 h-3" />
+                    {tag}
+                    <Plus className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" />
+                  </button>
+                ) : (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/5 rounded text-xs text-slate-300"
+                  >
+                    <Tag className="w-3 h-3" />
+                    {tag}
+                  </span>
+                )
               ))}
             </div>
           </div>
@@ -218,44 +336,107 @@ export function Inspector({ node, onClose, onNavigate, onStartPathfinding, isPat
           </div>
         </div>
 
-        {/* Graph Relationships */}
-        {neighbors?.edges && neighbors.edges.length > 0 && (
+        {/* Graph Relationships — grouped by category with RelationshipBadge */}
+        {groupedNeighbors && groupedNeighbors.size > 0 && (
           <div>
             <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-              Relationships ({neighbors.edges.length})
+              Relationships ({totalNeighborCount})
             </h4>
-            <div className="space-y-2">
-              {neighbors.graph_neighbors.slice(0, 5).map((neighbor) => {
-                const edge = neighbors.edges.find(
-                  (e) =>
-                    (e.source === node.id && e.target === neighbor.id) ||
-                    (e.target === node.id && e.source === neighbor.id)
-                )
 
-                return (
-                  <button
-                    key={neighbor.id}
-                    onClick={() => onNavigate(neighbor)}
-                    className="w-full flex items-start gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left group"
-                  >
-                    <div
-                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                      style={{ backgroundColor: neighbor.color }}
+            {/* Relationship type filter strip — standalone buttons, not nested */}
+            {onRelationshipTypeClick && uniqueEdgeTypes.length > 1 && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                {uniqueEdgeTypes.map((type) => {
+                  const isVisible = relationshipVisibility
+                    ? relationshipVisibility[type] !== false
+                    : true
+                  return (
+                    <RelationshipBadge
+                      key={type}
+                      type={type}
+                      direction="outgoing"
+                      strength={1}
+                      onClick={onRelationshipTypeClick}
+                      isVisible={isVisible}
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-slate-400 mb-0.5">
-                        {edge?.type.replace(/_/g, ' ')}
+                  )
+                })}
+              </div>
+            )}
+
+            {visibleGroups.map(({ category, neighbors: visible }) => (
+              <div key={category} className="mb-3">
+                {/* Category header */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: CATEGORY_COLORS[category as keyof typeof CATEGORY_COLORS] }}
+                  />
+                  <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                    {CATEGORY_LABELS[category] ?? category}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {visible.map(({ neighbor, edge, direction }) => {
+                    const isVisible = relationshipVisibility
+                      ? relationshipVisibility[edge.type] !== false
+                      : true
+
+                    return (
+                      <div key={neighbor.id} className="flex items-start gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onNavigate(neighbor)}
+                          className="flex-1 flex items-start gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left group min-w-0"
+                        >
+                          <div
+                            className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ backgroundColor: neighbor.color }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="mb-0.5">
+                              {/* Render as span inside button to avoid nested buttons */}
+                              <RelationshipBadge
+                                type={edge.type}
+                                direction={direction}
+                                strength={edge.strength}
+                                isVisible={isVisible}
+                              />
+                            </div>
+                            <div className="text-sm text-slate-200 line-clamp-2">
+                              {neighbor.content.slice(0, 80)}
+                              {neighbor.content.length > 80 && '...'}
+                            </div>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 flex-shrink-0" />
+                        </button>
                       </div>
-                      <div className="text-sm text-slate-200 line-clamp-2">
-                        {neighbor.content.slice(0, 80)}
-                        {neighbor.content.length > 80 && '...'}
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 flex-shrink-0" />
-                  </button>
-                )
-              })}
-            </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {/* Show more / less toggle */}
+            {totalNeighborCount > DEFAULT_NEIGHBOR_LIMIT && (
+              <button
+                onClick={() => setShowAllNeighbors((prev) => !prev)}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                {showAllNeighbors ? (
+                  <>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    Show fewer
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    Show all {totalNeighborCount}
+                  </>
+                )}
+              </button>
+            )}
           </div>
         )}
 
