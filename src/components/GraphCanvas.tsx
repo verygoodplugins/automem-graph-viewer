@@ -36,6 +36,7 @@ import type {
 import { DEFAULT_FORCE_CONFIG, DEFAULT_DISPLAY_CONFIG, DEFAULT_CLUSTER_CONFIG, DEFAULT_RELATIONSHIP_VISIBILITY } from '../lib/types'
 import { useClusterDetection } from '../hooks/useClusterDetection'
 import { ClusterBoundaries } from './ClusterBoundaries'
+import { ClusterLabels } from './ClusterLabels'
 
 interface NodeFocusState {
   depth: number
@@ -979,6 +980,10 @@ function Scene({
           clusters={clusters}
           visible={clusterConfig.showBoundaries}
           opacity={0.25}
+        />
+        <ClusterLabels
+          clusters={clusters}
+          visible={clusterConfig.mode !== 'none' && clusterConfig.showLabels}
         />
 
         {/* Batched edges - single draw call for all edges */}

@@ -9,6 +9,9 @@ export interface Cluster {
   // Computed from node positions
   centroid: { x: number; y: number; z: number }
   radius: number
+  memberCount: number
+  topTags: string[]
+  typeBreakdown: Record<string, number>
 }
 
 interface UseClusterDetectionOptions {
@@ -111,7 +114,19 @@ export function useClusterDetection({
         }
 
         if (component.length > 0) {
-          const key = `cluster-${clusterIndex++}`
+          // Derive a meaningful label from the most common tags
+          const tagCounts = new Map<string, number>()
+          for (const n of component) {
+            for (const tag of n.tags) {
+              if (tag.startsWith('entity:')) continue // skip entity tags
+              tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+            }
+          }
+          const sortedTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1])
+          const key = sortedTags.length > 0
+            ? sortedTags.slice(0, 2).map(([tag]) => tag).join(' + ')
+            : `Cluster ${clusterIndex}`
+          clusterIndex++
           nodeGroups.set(key, component)
         }
       }
@@ -152,13 +167,31 @@ export function useClusterDetection({
         color = hashColor(key)
       }
 
+      // Compute metadata: top tags and type breakdown
+      const tagCounts = new Map<string, number>()
+      const typeCounts: Record<string, number> = {}
+      for (const node of groupNodes) {
+        typeCounts[node.type] = (typeCounts[node.type] || 0) + 1
+        for (const tag of node.tags) {
+          if (tag.startsWith('entity:')) continue
+          tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+        }
+      }
+      const topTags = [...tagCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([tag]) => tag)
+
       clusters.push({
         id: key,
         label: key,
         color,
         nodeIds: new Set(groupNodes.map(n => n.id)),
         centroid: { x: cx, y: cy, z: cz },
-        radius: maxDist + 15, // Add padding for visual clarity
+        radius: maxDist + 15,
+        memberCount: groupNodes.length,
+        topTags,
+        typeBreakdown: typeCounts,
       })
     }
 

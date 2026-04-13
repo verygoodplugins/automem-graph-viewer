@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Filter, ChevronDown, Check } from 'lucide-react'
+import * as Slider from '@radix-ui/react-slider'
 import type { FilterState, MemoryType } from '../lib/types'
 
 const MEMORY_TYPES: MemoryType[] = [
@@ -94,23 +95,30 @@ export function FilterPanel({ filters, onChange, typeColors = {} }: FilterPanelP
             </div>
 
             <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-                Importance
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="font-medium text-slate-400 uppercase tracking-wider">
+                  Importance
+                </span>
+                <span className="text-slate-500 font-mono">
+                  {filters.importanceRange[0].toFixed(2)} – {filters.importanceRange[1].toFixed(2)}
+                </span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={filters.minImportance}
-                onChange={(e) =>
-                  onChange({ minImportance: parseFloat(e.target.value) })
-                }
-                className="w-full accent-blue-500"
-              />
-              <div className="flex justify-between text-xs text-slate-500">
+              <Slider.Root
+                className="relative flex items-center w-full h-5 select-none touch-none"
+                value={filters.importanceRange}
+                min={0}
+                max={1}
+                step={0.05}
+                onValueChange={(v) => onChange({ importanceRange: v as [number, number] })}
+              >
+                <Slider.Track className="relative h-1.5 w-full grow rounded-full bg-white/10">
+                  <Slider.Range className="absolute h-full rounded-full bg-blue-500/60" />
+                </Slider.Track>
+                <Slider.Thumb className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                <Slider.Thumb className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+              </Slider.Root>
+              <div className="flex justify-between text-xs text-slate-500 mt-1">
                 <span>All</span>
-                <span>{filters.minImportance.toFixed(1)}</span>
                 <span>Critical</span>
               </div>
             </div>
@@ -120,7 +128,7 @@ export function FilterPanel({ filters, onChange, typeColors = {} }: FilterPanelP
                 Max Nodes
               </div>
               <div className="flex gap-2">
-                {[100, 250, 500, 1000].map((n) => (
+                {[500, 2000, 5000, 0].map((n) => (
                   <button
                     key={n}
                     onClick={() => onChange({ maxNodes: n })}
@@ -130,7 +138,7 @@ export function FilterPanel({ filters, onChange, typeColors = {} }: FilterPanelP
                         : 'bg-white/5 text-slate-400 hover:bg-white/10'
                     }`}
                   >
-                    {n}
+                    {n === 0 ? 'All' : n.toLocaleString()}
                   </button>
                 ))}
               </div>
