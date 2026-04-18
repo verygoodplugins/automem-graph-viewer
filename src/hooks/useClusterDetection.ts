@@ -138,10 +138,16 @@ export function useClusterDetection({
             }
           }
           const sortedTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1])
-          const key = sortedTags.length > 0
+          const baseKey = sortedTags.length > 0
             ? sortedTags.slice(0, 2).map(([tag]) => tag).join(' + ')
             : `Cluster ${clusterIndex}`
           clusterIndex++
+          let key = baseKey
+          let duplicateIndex = 2
+          while (nodeGroups.has(key)) {
+            key = `${baseKey} (${duplicateIndex})`
+            duplicateIndex++
+          }
           nodeGroups.set(key, component)
         }
       }

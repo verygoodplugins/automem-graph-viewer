@@ -114,8 +114,14 @@ export function FilterPanel({ filters, onChange, typeColors = {} }: FilterPanelP
                 <Slider.Track className="relative h-1.5 w-full grow rounded-full bg-white/10">
                   <Slider.Range className="absolute h-full rounded-full bg-blue-500/60" />
                 </Slider.Track>
-                <Slider.Thumb className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
-                <Slider.Thumb className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50" />
+                <Slider.Thumb
+                  aria-label="Minimum importance"
+                  className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+                <Slider.Thumb
+                  aria-label="Maximum importance"
+                  className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
               </Slider.Root>
               <div className="flex justify-between text-xs text-slate-500 mt-1">
                 <span>All</span>

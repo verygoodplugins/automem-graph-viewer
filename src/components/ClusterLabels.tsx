@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { Text, Billboard } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { Cluster } from '../hooks/useClusterDetection'
@@ -52,6 +52,13 @@ function ClusterLabel({ cluster, isHovered, anyHovered, onHover, onClick }: Clus
     },
     [cluster, onClick]
   )
+
+  // Reset cursor if the label unmounts while hovered (e.g. mode switch)
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = 'default'
+    }
+  }, [])
 
   return (
     <group

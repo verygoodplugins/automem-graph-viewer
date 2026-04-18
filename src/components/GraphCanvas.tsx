@@ -432,13 +432,28 @@ function Scene({
     nodeIdToIdx,
   } = usePositionInterpolation(layoutNodes, { lerpSpeed: 5, layoutTick })
 
-  // Compute cluster centroid assignments for force attraction
+  // Compute cluster centroid assignments for force attraction.
+  // A node may belong to multiple clusters (e.g. entity mode with several entity tags).
+  // We average all cluster centroids the node belongs to so the attraction target is
+  // deterministic and not dependent on cluster iteration order.
   const clusterAssignments = useMemo(() => {
-    const map = new Map<string, { cx: number; cy: number; cz: number }>()
+    const accumulator = new Map<string, { cx: number; cy: number; cz: number; count: number }>()
     clusters.forEach(cluster => {
       cluster.nodeIds.forEach(nodeId => {
-        map.set(nodeId, { cx: cluster.centroid.x, cy: cluster.centroid.y, cz: cluster.centroid.z })
+        const existing = accumulator.get(nodeId)
+        if (existing) {
+          existing.cx += cluster.centroid.x
+          existing.cy += cluster.centroid.y
+          existing.cz += cluster.centroid.z
+          existing.count++
+        } else {
+          accumulator.set(nodeId, { cx: cluster.centroid.x, cy: cluster.centroid.y, cz: cluster.centroid.z, count: 1 })
+        }
       })
+    })
+    const map = new Map<string, { cx: number; cy: number; cz: number }>()
+    accumulator.forEach(({ cx, cy, cz, count }, nodeId) => {
+      map.set(nodeId, { cx: cx / count, cy: cy / count, cz: cz / count })
     })
     return map
   }, [clusters])

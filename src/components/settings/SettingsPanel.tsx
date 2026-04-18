@@ -333,7 +333,7 @@ export function SettingsPanel({
                 label="Show Boundaries"
                 checked={clusterConfig.showBoundaries}
                 onChange={(v) => onClusterConfigChange({ showBoundaries: v })}
-                description="Dotted circles around clusters"
+                description="Nebula-style point clouds around clusters"
               />
 
               <ToggleControl
