@@ -1,68 +1,78 @@
-import { useCallback, useEffect } from 'react'
-import { Text, Billboard } from '@react-three/drei'
-import type { ThreeEvent } from '@react-three/fiber'
-import type { Cluster } from '../hooks/useClusterDetection'
+import { useCallback, useEffect } from "react";
+import { Text, Billboard } from "@react-three/drei";
+import type { ThreeEvent } from "@react-three/fiber";
+import type { Cluster } from "../hooks/useClusterDetection";
 
 interface ClusterLabelsProps {
-  clusters: Cluster[]
-  visible: boolean
-  hoveredClusterId?: string | null
-  onClusterHover?: (cluster: Cluster | null) => void
-  onClusterClick?: (cluster: Cluster) => void
+  clusters: Cluster[];
+  visible: boolean;
+  hoveredClusterId?: string | null;
+  onClusterHover?: (cluster: Cluster | null) => void;
+  onClusterClick?: (cluster: Cluster) => void;
 }
 
 interface ClusterLabelProps {
-  cluster: Cluster
-  isHovered: boolean
-  anyHovered: boolean
-  onHover?: (cluster: Cluster | null) => void
-  onClick?: (cluster: Cluster) => void
+  cluster: Cluster;
+  isHovered: boolean;
+  anyHovered: boolean;
+  onHover?: (cluster: Cluster | null) => void;
+  onClick?: (cluster: Cluster) => void;
 }
 
-function ClusterLabel({ cluster, isHovered, anyHovered, onHover, onClick }: ClusterLabelProps) {
+function ClusterLabel({
+  cluster,
+  isHovered,
+  anyHovered,
+  onHover,
+  onClick,
+}: ClusterLabelProps) {
   // Position label above the cluster centroid
-  const yOffset = cluster.radius + 8
+  const yOffset = cluster.radius + 8;
 
-  const titleSize = isHovered ? 4 : 3
-  const subtitleOpacity = isHovered ? 1.0 : anyHovered ? 0.4 : 0.7
-  const titleOpacity = isHovered ? 1.0 : anyHovered ? 0.5 : 1.0
+  const titleSize = isHovered ? 4 : 3;
+  const subtitleOpacity = isHovered ? 1.0 : anyHovered ? 0.4 : 0.7;
+  const titleOpacity = isHovered ? 1.0 : anyHovered ? 0.5 : 1.0;
 
   const handlePointerOver = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      e.stopPropagation()
-      onHover?.(cluster)
-      document.body.style.cursor = 'pointer'
+      e.stopPropagation();
+      onHover?.(cluster);
+      document.body.style.cursor = "pointer";
     },
-    [cluster, onHover]
-  )
+    [cluster, onHover],
+  );
 
   const handlePointerOut = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      e.stopPropagation()
-      onHover?.(null)
-      document.body.style.cursor = 'default'
+      e.stopPropagation();
+      onHover?.(null);
+      document.body.style.cursor = "default";
     },
-    [onHover]
-  )
+    [onHover],
+  );
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
-      e.stopPropagation()
-      onClick?.(cluster)
+      e.stopPropagation();
+      onClick?.(cluster);
     },
-    [cluster, onClick]
-  )
+    [cluster, onClick],
+  );
 
   // Reset cursor if the label unmounts while hovered (e.g. mode switch)
   useEffect(() => {
     return () => {
-      document.body.style.cursor = 'default'
-    }
-  }, [])
+      document.body.style.cursor = "default";
+    };
+  }, []);
 
   return (
     <group
-      position={[cluster.centroid.x, cluster.centroid.y + yOffset, cluster.centroid.z]}
+      position={[
+        cluster.centroid.x,
+        cluster.centroid.y + yOffset,
+        cluster.centroid.z,
+      ]}
     >
       <Billboard follow lockX={false} lockY={false} lockZ={false}>
         <Text
@@ -94,11 +104,13 @@ function ClusterLabel({ cluster, isHovered, anyHovered, onHover, onClick }: Clus
           onClick={handleClick}
         >
           {cluster.memberCount} memories
-          {cluster.topTags.length > 0 ? ` · ${cluster.topTags.slice(0, 3).join(', ')}` : ''}
+          {cluster.topTags.length > 0
+            ? ` · ${cluster.topTags.slice(0, 3).join(", ")}`
+            : ""}
         </Text>
       </Billboard>
     </group>
-  )
+  );
 }
 
 export function ClusterLabels({
@@ -108,9 +120,9 @@ export function ClusterLabels({
   onClusterHover,
   onClusterClick,
 }: ClusterLabelsProps) {
-  if (!visible || clusters.length === 0) return null
+  if (!visible || clusters.length === 0) return null;
 
-  const anyHovered = hoveredClusterId != null
+  const anyHovered = hoveredClusterId != null;
 
   return (
     <group>
@@ -125,5 +137,5 @@ export function ClusterLabels({
         />
       ))}
     </group>
-  )
+  );
 }

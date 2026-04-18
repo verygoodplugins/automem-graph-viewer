@@ -1,10 +1,10 @@
-import { useRef, useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
-import type { SimulationNode } from '@/lib/types'
+import { useRef, useEffect, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
+import type { SimulationNode } from "@/lib/types";
 
 interface PositionInterpolationConfig {
-  lerpSpeed?: number
-  layoutTick?: number
+  lerpSpeed?: number;
+  layoutTick?: number;
 }
 
 /**
@@ -14,72 +14,72 @@ interface PositionInterpolationConfig {
  */
 export function usePositionInterpolation(
   layoutNodes: SimulationNode[],
-  config: PositionInterpolationConfig = {}
+  config: PositionInterpolationConfig = {},
 ) {
-  const { lerpSpeed = 5, layoutTick = 0 } = config
-  const nodeCount = layoutNodes.length
+  const { lerpSpeed = 5, layoutTick = 0 } = config;
+  const nodeCount = layoutNodes.length;
 
-  const currentPositions = useRef(new Float32Array(0))
-  const targetPositions = useRef(new Float32Array(0))
-  const basePositions = useRef(new Float32Array(0))
+  const currentPositions = useRef(new Float32Array(0));
+  const targetPositions = useRef(new Float32Array(0));
+  const basePositions = useRef(new Float32Array(0));
 
   // Track whether we've had a first initialization (to snap, not lerp)
-  const initializedRef = useRef(false)
+  const initializedRef = useRef(false);
 
   // Node ID to array index mapping
   const nodeIdToIdx = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, number>();
     layoutNodes.forEach((n, i) => {
-      map.set(n.id, i)
-    })
-    return map
-  }, [layoutNodes])
+      map.set(n.id, i);
+    });
+    return map;
+  }, [layoutNodes]);
 
   // Initialize/resize position arrays when node count changes
   useEffect(() => {
-    const size = nodeCount * 3
+    const size = nodeCount * 3;
     if (currentPositions.current.length !== size) {
-      currentPositions.current = new Float32Array(size)
-      targetPositions.current = new Float32Array(size)
-      basePositions.current = new Float32Array(size)
-      initializedRef.current = false
+      currentPositions.current = new Float32Array(size);
+      targetPositions.current = new Float32Array(size);
+      basePositions.current = new Float32Array(size);
+      initializedRef.current = false;
     }
-  }, [nodeCount])
+  }, [nodeCount]);
 
   // Update base and target positions when layout changes or simulation ticks
   useEffect(() => {
     for (let i = 0; i < layoutNodes.length; i++) {
-      const n = layoutNodes[i]
-      const offset = i * 3
-      basePositions.current[offset] = n.x ?? 0
-      basePositions.current[offset + 1] = n.y ?? 0
-      basePositions.current[offset + 2] = n.z ?? 0
+      const n = layoutNodes[i];
+      const offset = i * 3;
+      basePositions.current[offset] = n.x ?? 0;
+      basePositions.current[offset + 1] = n.y ?? 0;
+      basePositions.current[offset + 2] = n.z ?? 0;
     }
-    targetPositions.current.set(basePositions.current)
+    targetPositions.current.set(basePositions.current);
     if (!initializedRef.current) {
-      currentPositions.current.set(basePositions.current)
-      initializedRef.current = true
+      currentPositions.current.set(basePositions.current);
+      initializedRef.current = true;
     }
-  }, [layoutNodes, layoutTick])
+  }, [layoutNodes, layoutTick]);
 
   // Lerp current positions toward targets each frame
   useFrame((_, delta) => {
-    const cur = currentPositions.current
-    const tgt = targetPositions.current
-    if (cur.length === 0) return
+    const cur = currentPositions.current;
+    const tgt = targetPositions.current;
+    if (cur.length === 0) return;
 
-    const t = Math.min(1, delta * lerpSpeed)
+    const t = Math.min(1, delta * lerpSpeed);
     for (let i = 0; i < cur.length; i++) {
-      cur[i] += (tgt[i] - cur[i]) * t
+      cur[i] += (tgt[i] - cur[i]) * t;
     }
-  })
+  });
 
   return {
     currentPositions,
     targetPositions,
     basePositions,
     nodeIdToIdx,
-  }
+  };
 }
 
 /**
@@ -89,19 +89,19 @@ export function usePositionInterpolation(
 export function readAnimatedPosition(
   positions: Float32Array,
   idx: number,
-  out: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 }
+  out: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 },
 ) {
-  const off = idx * 3
+  const off = idx * 3;
   if (off + 2 < positions.length) {
-    out.x = positions[off]
-    out.y = positions[off + 1]
-    out.z = positions[off + 2]
+    out.x = positions[off];
+    out.y = positions[off + 1];
+    out.z = positions[off + 2];
   } else {
-    out.x = 0
-    out.y = 0
-    out.z = 0
+    out.x = 0;
+    out.y = 0;
+    out.z = 0;
   }
-  return out
+  return out;
 }
 
 /**
@@ -113,21 +113,21 @@ export function applyClusterAttraction(
   nodeIdToIdx: Map<string, number>,
   _basePositions: Float32Array,
   targetPositions: Float32Array,
-  strength: number
+  strength: number,
 ) {
-  if (strength <= 0) return
+  if (strength <= 0) return;
 
   clusterAssignments.forEach((centroid, nodeId) => {
-    const idx = nodeIdToIdx.get(nodeId)
-    if (idx === undefined) return
+    const idx = nodeIdToIdx.get(nodeId);
+    if (idx === undefined) return;
 
-    const offset = idx * 3
-    const bx = targetPositions[offset]
-    const by = targetPositions[offset + 1]
-    const bz = targetPositions[offset + 2]
+    const offset = idx * 3;
+    const bx = targetPositions[offset];
+    const by = targetPositions[offset + 1];
+    const bz = targetPositions[offset + 2];
 
-    targetPositions[offset] = bx + (centroid.cx - bx) * strength * 0.3
-    targetPositions[offset + 1] = by + (centroid.cy - by) * strength * 0.3
-    targetPositions[offset + 2] = bz + (centroid.cz - bz) * strength * 0.3
-  })
+    targetPositions[offset] = bx + (centroid.cx - bx) * strength * 0.3;
+    targetPositions[offset + 1] = by + (centroid.cy - by) * strength * 0.3;
+    targetPositions[offset + 2] = bz + (centroid.cz - bz) * strength * 0.3;
+  });
 }
