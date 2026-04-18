@@ -20,7 +20,7 @@ import { OrbitControls, Text, Billboard } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { useForceLayout } from '../hooks/useForceLayout'
-import { usePositionInterpolation, applySelectionGravity, applyClusterAttraction } from '@/hooks/usePositionInterpolation'
+import { usePositionInterpolation, applyClusterAttraction } from '@/hooks/usePositionInterpolation'
 import { useHandGestures, GestureState } from '../hooks/useHandGestures'
 import { useIPhoneHandTracking } from '../hooks/useIPhoneHandTracking'
 import { useHandLockAndGrab } from '../hooks/useHandLockAndGrab'
@@ -34,7 +34,7 @@ import type {
   RelationshipVisibility,
 } from '../lib/types'
 import { DEFAULT_FORCE_CONFIG, DEFAULT_DISPLAY_CONFIG, DEFAULT_CLUSTER_CONFIG, DEFAULT_RELATIONSHIP_VISIBILITY } from '../lib/types'
-import { useClusterDetection } from '../hooks/useClusterDetection'
+import { useClusterDetection, type Cluster } from '../hooks/useClusterDetection'
 import { ClusterBoundaries } from './ClusterBoundaries'
 import { ClusterLabels } from './ClusterLabels'
 
@@ -46,7 +46,7 @@ interface NodeFocusState {
 
 const SELECTION_DEPTH_OPACITY = [1.0, 1.0, 0.7, 0.4]
 const SELECTION_DEFAULT_OPACITY = 0.15
-import { SelectionHighlight, ConnectedPathsHighlight, PinchPreSelectHighlight } from './SelectionHighlight'
+import { SelectionHighlight, PinchPreSelectHighlight } from './SelectionHighlight'
 import { getEdgeStyle } from '../lib/edgeStyles'
 import { EdgeParticles } from './EdgeParticles'
 import { MiniMap } from './MiniMap'
@@ -131,6 +131,8 @@ interface GraphCanvasProps {
   // Tag cloud filtering
   tagFilteredNodeIds?: Set<string>
   hasTagFilter?: boolean
+  // Cluster interaction
+  onClusterSelect?: (cluster: Cluster | null) => void
 }
 
 export function GraphCanvas({
@@ -167,6 +169,7 @@ export function GraphCanvas({
   lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
+  onClusterSelect,
 }: GraphCanvasProps) {
   // MiniMap state
   const [cameraState, setCameraState] = useState({ x: 0, y: 0, z: 150, zoom: 1 })
@@ -271,6 +274,7 @@ export function GraphCanvas({
           tagFilteredNodeIds={tagFilteredNodeIds}
           hasTagFilter={hasTagFilter}
           onBimanualGrabChange={setBimanualActive}
+          onClusterSelect={onClusterSelect}
       />
     </Canvas>
 
@@ -350,6 +354,7 @@ function Scene({
   tagFilteredNodeIds,
   hasTagFilter = false,
   onBimanualGrabChange,
+  onClusterSelect,
 }: SceneProps) {
   const { camera } = useThree()
   const { nodes: layoutNodes, isSimulating, reheat, layoutTick } = useForceLayout({ nodes, edges, forceConfig })
@@ -385,12 +390,28 @@ function Scene({
         }
       }
     }
+    // Find entity-affinity nodes: share entity tags with selected node
+    const selectedEntityTags = selectedNode.tags.filter(t => t.startsWith('entity:'))
+    const entityAffinitySet = new Set<string>()
+    if (selectedEntityTags.length > 0) {
+      for (const n of layoutNodes) {
+        if (n.id === selectedNode.id) continue
+        if (n.tags.some(t => selectedEntityTags.includes(t))) {
+          entityAffinitySet.add(n.id)
+        }
+      }
+    }
+
     layoutNodes.forEach(n => {
       const depth = depths.get(n.id) ?? Infinity
-      const opacity = depth < SELECTION_DEPTH_OPACITY.length
-        ? SELECTION_DEPTH_OPACITY[depth]
-        : SELECTION_DEFAULT_OPACITY
-      result.set(n.id, { depth: depth === Infinity ? -1 : depth, opacity, isInFocus: depth <= 3 })
+      if (depth < SELECTION_DEPTH_OPACITY.length) {
+        result.set(n.id, { depth, opacity: SELECTION_DEPTH_OPACITY[depth], isInFocus: true })
+      } else if (entityAffinitySet.has(n.id)) {
+        // Entity-affinity nodes: visible as if depth 3 even without direct edges
+        result.set(n.id, { depth: 3, opacity: SELECTION_DEPTH_OPACITY[3], isInFocus: true })
+      } else {
+        result.set(n.id, { depth: -1, opacity: SELECTION_DEFAULT_OPACITY, isInFocus: false })
+      }
     })
     return result
   }, [layoutNodes, edges, selectedNode])
@@ -422,7 +443,7 @@ function Scene({
     return map
   }, [clusters])
 
-  // Recompute target positions when selection, cluster mode/strength, or layout changes
+  // Recompute target positions when cluster mode/strength or layout changes
   useEffect(() => {
     if (animBase.current.length === 0) return
 
@@ -438,18 +459,7 @@ function Scene({
       )
     }
 
-    if (selectedNode) {
-      applySelectionGravity(
-        selectedNode.id,
-        layoutNodes,
-        edges,
-        nodeIdToIdx,
-        animTargets.current,
-        animTargets.current,
-        0.5
-      )
-    }
-  }, [selectedNode, clusterConfig.mode, clusterConfig.clusterStrength, clusterAssignments, layoutNodes, edges, nodeIdToIdx, animBase, animTargets, layoutTick])
+  }, [clusterConfig.mode, clusterConfig.clusterStrength, clusterAssignments, nodeIdToIdx, animBase, animTargets, layoutTick])
 
   // Expose reheat function to parent
   useEffect(() => {
@@ -509,6 +519,63 @@ function Scene({
   useEffect(() => {
     onNavigateToReady?.(navigateTo)
   }, [navigateTo, onNavigateToReady])
+
+  // Cluster interaction: explicit hover (from label) overrides derived hover (from node membership)
+  const [explicitHoveredClusterId, setExplicitHoveredClusterId] = useState<string | null>(null)
+
+  const handleClusterHover = useCallback((cluster: Cluster | null) => {
+    setExplicitHoveredClusterId(cluster?.id ?? null)
+  }, [])
+
+  const navigateToCluster = useCallback((cx: number, cy: number, cz: number, radius: number) => {
+    if (!controlsRef.current) return
+    const controls = controlsRef.current
+    const startTarget = controls.target.clone()
+    const endTarget = new THREE.Vector3(cx, cy, cz)
+    const startCamPos = camera.position.clone()
+
+    // Calculate desired distance: cluster fills ~60% of viewport
+    const fovRad = ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180)
+    const desiredDistance = Math.max(20, Math.min(500, (radius / Math.tan(fovRad)) * 1.5))
+
+    // Preserve current viewing direction
+    const viewDir = startCamPos.clone().sub(startTarget).normalize()
+    const endCamPos = endTarget.clone().add(viewDir.multiplyScalar(desiredDistance))
+
+    const startTime = performance.now()
+    const duration = 600
+
+    const animate = () => {
+      const elapsed = performance.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3) // ease out cubic
+
+      controls.target.lerpVectors(startTarget, endTarget, eased)
+      camera.position.lerpVectors(startCamPos, endCamPos, eased)
+      controls.update()
+
+      if (progress < 1) {
+        requestAnimationFrame(animate)
+      }
+    }
+    requestAnimationFrame(animate)
+  }, [camera])
+
+  const handleClusterClick = useCallback((cluster: Cluster) => {
+    navigateToCluster(cluster.centroid.x, cluster.centroid.y, cluster.centroid.z, cluster.radius)
+    onClusterSelect?.(cluster)
+  }, [navigateToCluster, onClusterSelect])
+
+  // Derive hovered cluster from currently-hovered node when label isn't directly hovered
+  const derivedHoveredClusterId = useMemo(() => {
+    if (!hoveredNode) return null
+    for (const cluster of clusters) {
+      if (cluster.nodeIds.has(hoveredNode.id)) return cluster.id
+    }
+    return null
+  }, [hoveredNode, clusters])
+
+  const hoveredClusterId = explicitHoveredClusterId ?? derivedHoveredClusterId
 
   // Get nodes inside a screen-space polygon (for lasso selection)
   const getNodesInPolygon = useCallback((polygon: { x: number; y: number }[]) => {
@@ -656,17 +723,6 @@ function Scene({
     })
     return ids
   }, [selectedNode, edges])
-
-  // Get connected nodes for selection highlight
-  const connectedNodes = useMemo(() => {
-    if (!selectedNode) return []
-    const ids = new Set<string>()
-    edges.forEach((e) => {
-      if (e.source === selectedNode.id) ids.add(e.target)
-      if (e.target === selectedNode.id) ids.add(e.source)
-    })
-    return layoutNodes.filter(n => ids.has(n.id))
-  }, [selectedNode, edges, layoutNodes])
 
   // Get selected node from layout (with current position)
   const selectedLayoutNode = useMemo(() => {
@@ -979,11 +1035,15 @@ function Scene({
         <ClusterBoundaries
           clusters={clusters}
           visible={clusterConfig.showBoundaries}
-          opacity={0.25}
+          opacity={0.08}
+          hoveredClusterId={hoveredClusterId}
         />
         <ClusterLabels
           clusters={clusters}
           visible={clusterConfig.mode !== 'none' && clusterConfig.showLabels}
+          hoveredClusterId={hoveredClusterId}
+          onClusterHover={handleClusterHover}
+          onClusterClick={handleClusterClick}
         />
 
         {/* Batched edges - single draw call for all edges */}
@@ -1002,6 +1062,8 @@ function Scene({
           timeTravelVisibleNodes={timeTravelVisibleNodes}
           tagFilteredNodeIds={tagFilteredNodeIds}
           hasTagFilter={hasTagFilter}
+          searchTerm={searchTerm}
+          searchMatchingIds={matchingIds}
         />
 
         {/* Ambient edge particles - flowing along edges */}
@@ -1057,16 +1119,6 @@ function Scene({
           />
         )}
 
-        {/* Connected paths highlight - particles flowing to connected nodes */}
-        {selectedNode && connectedNodes.length > 0 && (
-          <ConnectedPathsHighlight
-            selectedNode={selectedNode}
-            connectedNodes={connectedNodes}
-            animatedPositions={animPositions}
-            nodeIdToIdx={nodeIdToIdx}
-          />
-        )}
-
         {/* LOD Labels - only for selected/hovered/nearby nodes */}
         {displayConfig.showLabels && (
         <LODLabels
@@ -1118,6 +1170,8 @@ interface BatchedEdgesProps {
   timeTravelVisibleNodes?: Set<string>
   tagFilteredNodeIds?: Set<string>
   hasTagFilter?: boolean
+  searchTerm?: string
+  searchMatchingIds?: Set<string>
 }
 
 function BatchedEdges({
@@ -1135,6 +1189,8 @@ function BatchedEdges({
   timeTravelVisibleNodes,
   tagFilteredNodeIds,
   hasTagFilter = false,
+  searchTerm,
+  searchMatchingIds,
 }: BatchedEdgesProps) {
   const lineRef = useRef<THREE.LineSegments>(null)
 
@@ -1204,13 +1260,18 @@ function BatchedEdges({
       const targetFocus = focusStates.get(edge.target)?.opacity ?? 1
       const focusOpacity = Math.min(sourceFocus, targetFocus)
 
+      const isSearchRelevant = searchTerm && searchMatchingIds &&
+        searchMatchingIds.has(edge.source) && searchMatchingIds.has(edge.target)
+
       let alpha = style.opacity * linkOpacity * focusOpacity
       if (isInPath) {
         alpha = 1.0
       } else if (isDimmed) {
         alpha *= 0.25
       } else if (isHighlighted) {
-        alpha = Math.min(1, alpha * 1.5)
+        alpha = 0.9
+      } else if (isSearchRelevant) {
+        alpha = Math.min(1, alpha * 2.0)
       }
 
       const r = color.r * alpha
@@ -1222,7 +1283,7 @@ function BatchedEdges({
     })
 
     return { edgeIndices, visibleCount }
-  }, [edges, nodeById, nodeIdToIdx, selectedNode, relationshipVisibility, linkOpacity, focusStates, pathEdgeKeys, timeTravelActive, timeTravelVisibleNodes, tagFilteredNodeIds, hasTagFilter])
+  }, [edges, nodeById, nodeIdToIdx, selectedNode, relationshipVisibility, linkOpacity, focusStates, pathEdgeKeys, timeTravelActive, timeTravelVisibleNodes, tagFilteredNodeIds, hasTagFilter, searchTerm, searchMatchingIds])
 
   // Set up geometry once with max-sized buffers, use setDrawRange for visibility
   const initializedRef = useRef(false)

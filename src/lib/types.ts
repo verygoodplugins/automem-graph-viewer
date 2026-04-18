@@ -146,7 +146,7 @@ export interface DisplayConfig {
 }
 
 // Clustering configuration
-export type ClusterMode = 'type' | 'tags' | 'semantic' | 'none'
+export type ClusterMode = 'type' | 'tags' | 'semantic' | 'entity' | 'none'
 
 export interface ClusterConfig {
   mode: ClusterMode

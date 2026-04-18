@@ -39,6 +39,7 @@ const CLUSTER_MODES: { value: ClusterMode; label: string; description: string }[
   { value: 'type', label: 'By Type', description: 'Groups memories by type (Decision, Pattern, Insight, etc.)' },
   { value: 'tags', label: 'By Tags', description: 'Groups memories sharing the same primary tag' },
   { value: 'semantic', label: 'Semantic', description: 'Groups strongly-connected memories by relationship strength' },
+  { value: 'entity', label: 'By Entity', description: 'Groups memories by referenced entities (people, places, etc.)' },
 ]
 
 interface SettingsPanelProps {

@@ -68,6 +68,21 @@ export function useClusterDetection({
         }
         nodeGroups.get(key)!.push(node)
       }
+    } else if (mode === 'entity') {
+      // Group by entity tags (entity:category:name)
+      for (const node of nodes) {
+        for (const tag of node.tags) {
+          if (!tag.startsWith('entity:')) continue
+          // Parse entity:category:name → key "category:name"
+          const parts = tag.split(':')
+          if (parts.length < 3) continue
+          const entityKey = parts.slice(1).join(':') // e.g. "person:dana"
+          if (!nodeGroups.has(entityKey)) {
+            nodeGroups.set(entityKey, [])
+          }
+          nodeGroups.get(entityKey)!.push(node)
+        }
+      }
     } else if (mode === 'semantic') {
       // Group by connected components using edges
       // Nodes connected by strong relationships form clusters
@@ -173,7 +188,8 @@ export function useClusterDetection({
       for (const node of groupNodes) {
         typeCounts[node.type] = (typeCounts[node.type] || 0) + 1
         for (const tag of node.tags) {
-          if (tag.startsWith('entity:')) continue
+          // Skip entity tags in topTags except in entity mode
+          if (tag.startsWith('entity:') && mode !== 'entity') continue
           tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
         }
       }
@@ -182,9 +198,17 @@ export function useClusterDetection({
         .slice(0, 5)
         .map(([tag]) => tag)
 
+      // Derive display label — for entity mode, capitalize the entity name
+      let label = key
+      if (mode === 'entity') {
+        // key is "category:name" e.g. "person:dana" → "Dana"
+        const namePart = key.includes(':') ? key.split(':').pop()! : key
+        label = namePart.charAt(0).toUpperCase() + namePart.slice(1)
+      }
+
       clusters.push({
         id: key,
-        label: key,
+        label,
         color,
         nodeIds: new Set(groupNodes.map(n => n.id)),
         centroid: { x: cx, y: cy, z: cz },
