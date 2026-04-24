@@ -326,10 +326,18 @@ export default function App() {
   // Apply archive threshold default on first successful load
   useEffect(() => {
     if (data?.meta?.archive_threshold != null && !hasSetDefaultImportance) {
-      setFilters(prev => ({
-        ...prev,
-        importanceRange: [data.meta.archive_threshold!, prev.importanceRange[1]],
-      }))
+      setFilters(prev => {
+        const threshold = data.meta.archive_threshold!
+        const upperBound = prev.importanceRange[1]
+        const normalized = Number.isFinite(threshold)
+          ? Math.min(1, Math.max(0, threshold))
+          : 0
+        const lowerBound = Math.min(normalized, upperBound)
+        return {
+          ...prev,
+          importanceRange: [lowerBound, upperBound],
+        }
+      })
       setHasSetDefaultImportance(true)
     }
   }, [data?.meta?.archive_threshold, hasSetDefaultImportance])

@@ -212,14 +212,22 @@ export function useClusterDetection({
         label = namePart.charAt(0).toUpperCase() + namePart.slice(1)
       }
 
+      // Deduplicate nodes (entity mode can push same node multiple times for same cluster)
+      const seenIds = new Set<string>()
+      const uniqueNodes = groupNodes.filter(n => {
+        if (seenIds.has(n.id)) return false
+        seenIds.add(n.id)
+        return true
+      })
+
       clusters.push({
         id: key,
         label,
         color,
-        nodeIds: new Set(groupNodes.map(n => n.id)),
+        nodeIds: new Set(uniqueNodes.map(n => n.id)),
         centroid: { x: cx, y: cy, z: cz },
         radius: maxDist + 15,
-        memberCount: groupNodes.length,
+        memberCount: uniqueNodes.length,
         topTags,
         typeBreakdown: typeCounts,
       })

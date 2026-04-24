@@ -643,6 +643,24 @@ function Scene({
     string | null
   >(null);
 
+  // Clear explicit hover when labels are hidden or cluster mode changes to avoid stuck state
+  const previousClusterModeRef = useRef(clusterConfig.mode);
+  useEffect(() => {
+    const modeChanged = previousClusterModeRef.current !== clusterConfig.mode;
+    previousClusterModeRef.current = clusterConfig.mode;
+
+    if (!clusterConfig.showLabels || modeChanged) {
+      setExplicitHoveredClusterId(null);
+      return;
+    }
+
+    // Also clear if the hovered cluster no longer exists in the current cluster list
+    setExplicitHoveredClusterId(current => {
+      if (!current) return null;
+      return clusters.some(c => c.id === current) ? current : null;
+    });
+  }, [clusters, clusterConfig.mode, clusterConfig.showLabels]);
+
   const handleClusterHover = useCallback((cluster: Cluster | null) => {
     setExplicitHoveredClusterId(cluster?.id ?? null);
   }, []);
