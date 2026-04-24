@@ -47,7 +47,7 @@ export const EDGE_STYLES: Record<RelationType, EdgeStyle> = {
   // Temporal relationships (dashed, directional)
   OCCURRED_BEFORE: {
     color: '#6B7280',      // Gray
-    opacity: 0.5,
+    opacity: 0.6,
     width: 1.0,
     dashPattern: [4, 2],
     arrow: true,
@@ -67,7 +67,7 @@ export const EDGE_STYLES: Record<RelationType, EdgeStyle> = {
   // Associative relationships (dotted, bidirectional)
   RELATES_TO: {
     color: '#94A3B8',      // Slate
-    opacity: 0.4,
+    opacity: 0.6,
     width: 1.0,
     dashPattern: [2, 2],
     arrow: false,
@@ -116,7 +116,7 @@ export const EDGE_STYLES: Record<RelationType, EdgeStyle> = {
   },
   PART_OF: {
     color: '#64748B',      // Slate darker
-    opacity: 0.5,
+    opacity: 0.6,
     width: 1.0,
     dashPattern: null,
     arrow: true,

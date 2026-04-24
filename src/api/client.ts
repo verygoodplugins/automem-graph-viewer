@@ -120,8 +120,8 @@ export interface SnapshotParams {
 export async function fetchGraphSnapshot(params: SnapshotParams = {}): Promise<GraphSnapshot> {
   const searchParams = new URLSearchParams()
 
-  if (params.limit) searchParams.set('limit', String(params.limit))
-  if (params.minImportance) searchParams.set('min_importance', String(params.minImportance))
+  if (params.limit != null) searchParams.set('limit', String(params.limit))
+  if (params.minImportance != null) searchParams.set('min_importance', String(params.minImportance))
   if (params.types?.length) searchParams.set('types', params.types.join(','))
   if (params.since) searchParams.set('since', params.since)
 

@@ -1,6 +1,7 @@
 import { X, RotateCcw, Zap, Volume2 } from 'lucide-react'
 import { SettingsSection } from './SettingsSection'
 import { SliderControl } from './SliderControl'
+import { RangeSliderControl } from './RangeSliderControl'
 import { ToggleControl } from './ToggleControl'
 import type {
   ForceConfig,
@@ -33,11 +34,12 @@ const MEMORY_TYPES: MemoryType[] = [
   'Habit', 'Insight', 'Context', 'Memory',
 ]
 
-const CLUSTER_MODES: { value: ClusterMode; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'type', label: 'By Type' },
-  { value: 'tags', label: 'By Tags' },
-  { value: 'semantic', label: 'Semantic' },
+const CLUSTER_MODES: { value: ClusterMode; label: string; description: string }[] = [
+  { value: 'none', label: 'None', description: 'No grouping applied' },
+  { value: 'type', label: 'By Type', description: 'Groups memories by type (Decision, Pattern, Insight, etc.)' },
+  { value: 'tags', label: 'By Tags', description: 'Groups memories sharing the same primary tag' },
+  { value: 'semantic', label: 'Semantic', description: 'Groups strongly-connected memories by relationship strength' },
+  { value: 'entity', label: 'By Entity', description: 'Groups memories by referenced entities (people, places, etc.)' },
 ]
 
 interface SettingsPanelProps {
@@ -154,20 +156,20 @@ export function SettingsPanel({
             )}
           </div>
 
-          <SliderControl
-            label="Min Importance"
-            value={filters.minImportance}
+          <RangeSliderControl
+            label="Importance Range"
+            value={filters.importanceRange}
             min={0}
             max={1}
-            step={0.1}
-            onChange={(v) => onFiltersChange({ minImportance: v })}
-            formatValue={(v) => v.toFixed(1)}
+            step={0.05}
+            onChange={(v) => onFiltersChange({ importanceRange: v })}
+            formatValue={(v) => v.toFixed(2)}
           />
 
           <div className="space-y-1.5">
             <label className="text-xs text-slate-400">Max Nodes</label>
             <div className="flex gap-1">
-              {[100, 250, 500, 1000].map((n) => (
+              {[500, 2000, 5000, 0].map((n) => (
                 <button
                   key={n}
                   onClick={() => onFiltersChange({ maxNodes: n })}
@@ -179,7 +181,7 @@ export function SettingsPanel({
                     }
                   `}
                 >
-                  {n}
+                  {n === 0 ? 'All' : n.toLocaleString()}
                 </button>
               ))}
             </div>
@@ -321,13 +323,24 @@ export function SettingsPanel({
             </div>
           </div>
 
+          <p className="text-[10px] text-slate-500 leading-relaxed">
+            {CLUSTER_MODES.find(m => m.value === clusterConfig.mode)?.description}
+          </p>
+
           {clusterConfig.mode !== 'none' && (
             <>
               <ToggleControl
                 label="Show Boundaries"
                 checked={clusterConfig.showBoundaries}
                 onChange={(v) => onClusterConfigChange({ showBoundaries: v })}
-                description="Dotted circles around clusters"
+                description="Nebula-style point clouds around clusters"
+              />
+
+              <ToggleControl
+                label="Show Labels"
+                checked={clusterConfig.showLabels}
+                onChange={(v) => onClusterConfigChange({ showLabels: v })}
+                description="Cluster names in the 3D scene"
               />
 
               <SliderControl

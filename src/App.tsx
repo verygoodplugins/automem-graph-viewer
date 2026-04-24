@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Keyboard, Settings } from 'lucide-react'
 
-const HAND_CONTROLS_ENABLED = import.meta.env.VITE_ENABLE_HAND_CONTROLS === 'true'
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useGraphSnapshot } from './hooks/useGraphData'
 import { useAuth } from './hooks/useAuth'
@@ -254,9 +253,10 @@ export default function App() {
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
     types: [],
-    minImportance: 0,
+    importanceRange: [0.3, 1],
     maxNodes: 500,
   })
+  const [hasSetDefaultImportance, setHasSetDefaultImportance] = useState(false)
 
   // Force configuration state
   const [forceConfig, setForceConfig] = useState<ForceConfig>(DEFAULT_FORCE_CONFIG)
@@ -314,14 +314,40 @@ export default function App() {
 
   const { data, isLoading, error, refetch } = useGraphSnapshot({
     limit: filters.maxNodes,
-    minImportance: filters.minImportance,
+    minImportance: filters.importanceRange[0],
     types: filters.types.length > 0 ? filters.types : undefined,
     enabled: isAuthenticated,
   })
 
   // Stable data references - use EMPTY constants when data not loaded
-  const nodes = data?.nodes ?? EMPTY_NODES
+  const rawNodes = data?.nodes ?? EMPTY_NODES
   const edges = data?.edges ?? EMPTY_EDGES
+
+  // Apply archive threshold default on first successful load
+  useEffect(() => {
+    if (data?.meta?.archive_threshold != null && !hasSetDefaultImportance) {
+      setFilters(prev => {
+        const threshold = data.meta.archive_threshold!
+        const upperBound = prev.importanceRange[1]
+        const normalized = Number.isFinite(threshold)
+          ? Math.min(1, Math.max(0, threshold))
+          : 0
+        const lowerBound = Math.min(normalized, upperBound)
+        return {
+          ...prev,
+          importanceRange: [lowerBound, upperBound],
+        }
+      })
+      setHasSetDefaultImportance(true)
+    }
+  }, [data?.meta?.archive_threshold, hasSetDefaultImportance])
+
+  // Client-side max importance filtering (API only supports min)
+  const nodes = useMemo(() => {
+    const maxImportance = filters.importanceRange[1]
+    if (maxImportance >= 1) return rawNodes
+    return rawNodes.filter(n => n.importance <= maxImportance)
+  }, [rawNodes, filters.importanceRange])
 
   // Tag Cloud
   const tagCloud = useTagCloud({
@@ -793,10 +819,9 @@ export default function App() {
           </span>
         </button>
 
-        {/* Gesture controls are opt-in via VITE_ENABLE_HAND_CONTROLS=true */}
-        {HAND_CONTROLS_ENABLED && (
-          <button
-            onClick={() => setGestureControlEnabled(!gestureControlEnabled)}
+        {/* Gesture controls */}
+        <button
+          onClick={() => setGestureControlEnabled(!gestureControlEnabled)}
             className={`
               flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
               ${gestureControlEnabled
@@ -810,11 +835,10 @@ export default function App() {
             <span className="text-sm font-medium hidden sm:inline">
               {gestureControlEnabled ? 'Gestures ON' : 'Gestures'}
             </span>
-          </button>
-        )}
+        </button>
 
         {/* Debug Overlay Toggle (only show when gestures are enabled) */}
-        {HAND_CONTROLS_ENABLED && gestureControlEnabled && (
+        {gestureControlEnabled && (
           <button
             onClick={() => setDebugOverlayVisible(!debugOverlayVisible)}
             className={`
@@ -940,7 +964,7 @@ export default function App() {
                 onNodeSelect={handleNodeSelect}
                 onNodeHover={handleNodeHover}
                 onNodeContextMenu={handleNodeContextMenu}
-                gestureControlEnabled={HAND_CONTROLS_ENABLED && gestureControlEnabled}
+                gestureControlEnabled={gestureControlEnabled}
                 trackingSource={trackingSource}
                 onGestureStateChange={handleGestureStateChange}
                 onTrackingInfoChange={setTrackingInfo}
@@ -970,19 +994,19 @@ export default function App() {
               {/* 2D Hand Overlay (on top of canvas, life-size) */}
               <Hand2DOverlay
                 gestureState={gestureState}
-                enabled={HAND_CONTROLS_ENABLED && gestureControlEnabled}
+                enabled={gestureControlEnabled}
                 lock={handLock}
               />
 
               {/* Gesture Debug Overlay */}
               <GestureDebugOverlay
                 gestureState={gestureState}
-                visible={HAND_CONTROLS_ENABLED && debugOverlayVisible && gestureControlEnabled}
+                visible={debugOverlayVisible && gestureControlEnabled}
               />
 
               {/* Hand Control Overlay (lock/grab metrics) */}
               <HandControlOverlay
-                enabled={HAND_CONTROLS_ENABLED && gestureControlEnabled}
+                enabled={gestureControlEnabled}
                 lock={handLock}
                 source={trackingSource}
                 onSourceChange={handleSourceChange}

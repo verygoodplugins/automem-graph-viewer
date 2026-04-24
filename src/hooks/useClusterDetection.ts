@@ -9,6 +9,9 @@ export interface Cluster {
   // Computed from node positions
   centroid: { x: number; y: number; z: number }
   radius: number
+  memberCount: number
+  topTags: string[]
+  typeBreakdown: Record<string, number>
 }
 
 interface UseClusterDetectionOptions {
@@ -65,6 +68,21 @@ export function useClusterDetection({
         }
         nodeGroups.get(key)!.push(node)
       }
+    } else if (mode === 'entity') {
+      // Group by entity tags (entity:category:name)
+      for (const node of nodes) {
+        for (const tag of node.tags) {
+          if (!tag.startsWith('entity:')) continue
+          // Parse entity:category:name → key "category:name"
+          const parts = tag.split(':')
+          if (parts.length < 3) continue
+          const entityKey = parts.slice(1).join(':') // e.g. "person:dana"
+          if (!nodeGroups.has(entityKey)) {
+            nodeGroups.set(entityKey, [])
+          }
+          nodeGroups.get(entityKey)!.push(node)
+        }
+      }
     } else if (mode === 'semantic') {
       // Group by connected components using edges
       // Nodes connected by strong relationships form clusters
@@ -111,7 +129,25 @@ export function useClusterDetection({
         }
 
         if (component.length > 0) {
-          const key = `cluster-${clusterIndex++}`
+          // Derive a meaningful label from the most common tags
+          const tagCounts = new Map<string, number>()
+          for (const n of component) {
+            for (const tag of n.tags) {
+              if (tag.startsWith('entity:')) continue // skip entity tags
+              tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+            }
+          }
+          const sortedTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1])
+          const baseKey = sortedTags.length > 0
+            ? sortedTags.slice(0, 2).map(([tag]) => tag).join(' + ')
+            : `Cluster ${clusterIndex}`
+          clusterIndex++
+          let key = baseKey
+          let duplicateIndex = 2
+          while (nodeGroups.has(key)) {
+            key = `${baseKey} (${duplicateIndex})`
+            duplicateIndex++
+          }
           nodeGroups.set(key, component)
         }
       }
@@ -152,13 +188,48 @@ export function useClusterDetection({
         color = hashColor(key)
       }
 
+      // Compute metadata: top tags and type breakdown
+      const tagCounts = new Map<string, number>()
+      const typeCounts: Record<string, number> = {}
+      for (const node of groupNodes) {
+        typeCounts[node.type] = (typeCounts[node.type] || 0) + 1
+        for (const tag of node.tags) {
+          // Skip entity tags in topTags except in entity mode
+          if (tag.startsWith('entity:') && mode !== 'entity') continue
+          tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+        }
+      }
+      const topTags = [...tagCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([tag]) => tag)
+
+      // Derive display label — for entity mode, capitalize the entity name
+      let label = key
+      if (mode === 'entity') {
+        // key is "category:name" e.g. "person:dana" → "Dana"
+        const namePart = key.includes(':') ? key.split(':').pop()! : key
+        label = namePart.charAt(0).toUpperCase() + namePart.slice(1)
+      }
+
+      // Deduplicate nodes (entity mode can push same node multiple times for same cluster)
+      const seenIds = new Set<string>()
+      const uniqueNodes = groupNodes.filter(n => {
+        if (seenIds.has(n.id)) return false
+        seenIds.add(n.id)
+        return true
+      })
+
       clusters.push({
         id: key,
-        label: key,
+        label,
         color,
-        nodeIds: new Set(groupNodes.map(n => n.id)),
+        nodeIds: new Set(uniqueNodes.map(n => n.id)),
         centroid: { x: cx, y: cy, z: cz },
-        radius: maxDist + 15, // Add padding for visual clarity
+        radius: maxDist + 15,
+        memberCount: uniqueNodes.length,
+        topTags,
+        typeBreakdown: typeCounts,
       })
     }
 

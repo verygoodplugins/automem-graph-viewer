@@ -69,6 +69,7 @@ export interface GraphSnapshot {
     type_colors: Record<string, string>
     relation_colors: Record<string, string>
     query_time_ms: number
+    archive_threshold?: number
   }
 }
 
@@ -108,7 +109,7 @@ export interface GraphStats {
 
 export interface FilterState {
   types: MemoryType[]
-  minImportance: number
+  importanceRange: [number, number]
   maxNodes: number
 }
 
@@ -145,11 +146,12 @@ export interface DisplayConfig {
 }
 
 // Clustering configuration
-export type ClusterMode = 'type' | 'tags' | 'semantic' | 'none'
+export type ClusterMode = 'type' | 'tags' | 'semantic' | 'entity' | 'none'
 
 export interface ClusterConfig {
   mode: ClusterMode
   showBoundaries: boolean
+  showLabels: boolean
   clusterStrength: number     // Additional force pulling cluster members together
 }
 
@@ -185,6 +187,7 @@ export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
 export const DEFAULT_CLUSTER_CONFIG: ClusterConfig = {
   mode: 'type',
   showBoundaries: false,
+  showLabels: true,
   clusterStrength: 0.3,
 }
 

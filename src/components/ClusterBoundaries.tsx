@@ -1,84 +1,71 @@
-import { useMemo, useRef, useState, useEffect } from 'react'
-import { useFrame } from '@react-three/fiber'
-import * as THREE from 'three'
-import type { Cluster } from '@/hooks/useClusterDetection'
+import { useMemo, useRef, useState, useEffect } from "react";
+import { useFrame } from "@react-three/fiber";
+import * as THREE from "three";
+import type { Cluster } from "@/hooks/useClusterDetection";
 
 interface ClusterBoundariesProps {
-  clusters: Cluster[]
-  visible: boolean
-  opacity?: number
+  clusters: Cluster[];
+  visible: boolean;
+  opacity?: number;
+  hoveredClusterId?: string | null;
 }
 
-const FADE_SPEED = 3
-// Time (ms) for opacity to decay below 0.01 at 60fps with FADE_SPEED=3:
-// 0.3 * (1 - min(1, FADE_SPEED/60))^n < 0.01  →  n ≈ 67 frames ≈ 1200ms
-const FADE_DURATION_MS = 1200
+const FADE_SPEED = 3;
+const FADE_DURATION_MS = 1200;
+const BASE_OPACITY = 0.12;
+const HOVER_OPACITY = 0.25;
 
-// Generate points on a sphere surface for dotted effect
-function generateSpherePoints(radius: number, count: number): Float32Array {
-  const positions = new Float32Array(count * 3)
-
-  // Fibonacci sphere distribution for even spacing
-  const goldenRatio = (1 + Math.sqrt(5)) / 2
-  const angleIncrement = Math.PI * 2 * goldenRatio
-
+// Nebula-style point cloud: very small dots distributed through the volume
+function generateNebulaPoints(radius: number, count: number): Float32Array {
+  const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
-    const t = i / count
-    const inclination = Math.acos(1 - 2 * t)
-    const azimuth = angleIncrement * i
+    // Random points within the sphere volume (not just surface)
+    // Use cube-root distribution for even volume fill
+    const r = radius * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
 
-    const x = Math.sin(inclination) * Math.cos(azimuth) * radius
-    const y = Math.sin(inclination) * Math.sin(azimuth) * radius
-    const z = Math.cos(inclination) * radius
-
-    positions[i * 3] = x
-    positions[i * 3 + 1] = y
-    positions[i * 3 + 2] = z
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i * 3 + 2] = r * Math.cos(phi);
   }
-
-  return positions
+  return positions;
 }
 
-/**
- * A single cluster boundary sphere made of points
- */
 function ClusterBoundary({
   cluster,
-  targetOpacity = 0.3,
+  targetOpacity,
+  isHovered,
 }: {
-  cluster: Cluster
-  targetOpacity?: number
+  cluster: Cluster;
+  targetOpacity: number;
+  isHovered: boolean;
 }) {
-  const pointsRef = useRef<THREE.Points>(null)
-  const materialRef = useRef<THREE.PointsMaterial>(null)
-  const currentOpacityRef = useRef(0)
+  const materialRef = useRef<THREE.PointsMaterial>(null);
+  const currentOpacityRef = useRef(0);
 
-  const pointCount = Math.max(100, Math.floor(cluster.radius * 8))
+  const effectiveTarget = isHovered ? HOVER_OPACITY : targetOpacity;
 
-  const positions = useMemo(() => {
-    return generateSpherePoints(cluster.radius, pointCount)
-  }, [cluster.radius, pointCount])
+  // More points for larger clusters, but keep them subtle
+  const pointCount = Math.max(80, Math.floor(cluster.radius * 4));
+
+  const positions = useMemo(
+    () => generateNebulaPoints(cluster.radius, pointCount),
+    [cluster.radius, pointCount],
+  );
 
   useFrame((_, delta) => {
-    if (pointsRef.current) {
-      pointsRef.current.rotation.y += delta * 0.05
-      pointsRef.current.rotation.x += delta * 0.02
-    }
-    // Smooth fade
     if (materialRef.current) {
-      const diff = targetOpacity - currentOpacityRef.current
-      currentOpacityRef.current += diff * Math.min(1, delta * FADE_SPEED)
-      materialRef.current.opacity = currentOpacityRef.current
+      const diff = effectiveTarget - currentOpacityRef.current;
+      currentOpacityRef.current += diff * Math.min(1, delta * FADE_SPEED);
+      materialRef.current.opacity = currentOpacityRef.current;
     }
-  })
+  });
 
-  const color = useMemo(() => {
-    return new THREE.Color(cluster.color)
-  }, [cluster.color])
+  const color = useMemo(() => new THREE.Color(cluster.color), [cluster.color]);
 
   return (
     <points
-      ref={pointsRef}
       position={[cluster.centroid.x, cluster.centroid.y, cluster.centroid.z]}
     >
       <bufferGeometry>
@@ -92,39 +79,44 @@ function ClusterBoundary({
       <pointsMaterial
         ref={materialRef}
         color={color}
-        size={1.5}
+        size={0.6}
         transparent
         opacity={0}
         sizeAttenuation
         depthWrite={false}
       />
     </points>
-  )
+  );
 }
 
 /**
- * Renders dotted sphere boundaries around detected clusters
+ * Renders nebula-like point cloud boundaries around detected clusters.
+ * Very small dots distributed through the cluster volume — can't be
+ * confused with memory nodes.
  */
 export function ClusterBoundaries({
   clusters,
   visible,
-  opacity = 0.3,
+  opacity = BASE_OPACITY,
+  hoveredClusterId,
 }: ClusterBoundariesProps) {
   const [displayClusters, setDisplayClusters] = useState<Cluster[]>(() =>
-    visible ? clusters : []
-  )
+    visible ? clusters : [],
+  );
 
   useEffect(() => {
     if (visible) {
-      setDisplayClusters(clusters)
-      return
+      setDisplayClusters(clusters);
+      return;
     }
-    // Keep mounted long enough for opacity to fully decay, then unmount
-    const timeout = window.setTimeout(() => setDisplayClusters([]), FADE_DURATION_MS)
-    return () => window.clearTimeout(timeout)
-  }, [visible, clusters])
+    const timeout = window.setTimeout(
+      () => setDisplayClusters([]),
+      FADE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [visible, clusters]);
 
-  if (displayClusters.length === 0) return null
+  if (displayClusters.length === 0) return null;
 
   return (
     <group>
@@ -133,8 +125,9 @@ export function ClusterBoundaries({
           key={cluster.id}
           cluster={cluster}
           targetOpacity={visible ? opacity : 0}
+          isHovered={hoveredClusterId === cluster.id}
         />
       ))}
     </group>
-  )
+  );
 }
