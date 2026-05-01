@@ -285,7 +285,7 @@ export function GraphCanvas({
       className={`relative w-full h-full transition-shadow duration-300 ${bimanualActive ? "ring-2 ring-inset ring-purple-500/50 shadow-[inset_0_0_30px_rgba(168,85,247,0.15)]" : ""}`}
     >
       <Canvas
-        camera={{ position: [0, 0, 150], fov: 60 }}
+        camera={{ position: [0, 0, 320], fov: 60 }}
         gl={{
           antialias: !performanceMode,
           alpha: true,
@@ -1223,7 +1223,7 @@ function Scene({
         autoRotateSpeed={0.5}
         onStart={handleInteractionStart}
         minDistance={20}
-        maxDistance={500}
+        maxDistance={2500}
       />
 
       {/* Graph content */}
