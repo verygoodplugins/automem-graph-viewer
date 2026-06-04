@@ -36,9 +36,16 @@ const layoutCache = {
 }
 
 // Helper to create data signature
+// Samples ~20 evenly-spaced nodes rather than just the first and last, so
+// changes in the middle of the list (e.g. after importance filtering) are detected.
 function createDataSignature(nodes: GraphNode[]): string {
   if (nodes.length === 0) return ''
-  return `${nodes.length}-${nodes[0]?.id}-${nodes[nodes.length - 1]?.id}`
+  const step = Math.max(1, Math.floor(nodes.length / 20))
+  let sig = String(nodes.length)
+  for (let i = 0; i < nodes.length; i += step) {
+    sig += `-${nodes[i].id.slice(-8)}`
+  }
+  return sig
 }
 
 // Helper to run the force simulation (pure function, no React)
@@ -83,7 +90,7 @@ function computeLayout(
   // Create node lookup
   const nodeById = new Map(simNodes.map((n) => [n.id, n]))
 
-  // Create links
+  // Create links (only between nodes present in the snapshot)
   const links: SimulationLink[] = edges
     .filter((e) => nodeById.has(e.source) && nodeById.has(e.target))
     .map((e) => ({
@@ -92,6 +99,15 @@ function computeLayout(
       strength: e.strength,
       type: e.type,
     }))
+
+  // Identify isolated nodes (no edges in the current snapshot) so we can apply
+  // a stronger radial force to keep them visible rather than letting them drift
+  // to the far periphery under pure charge repulsion.
+  const connectedNodeIds = new Set<string>()
+  for (const link of links) {
+    connectedNodeIds.add(link.source as string)
+    connectedNodeIds.add(link.target as string)
+  }
 
   // Stop existing simulation
   if (layoutCache.simulation) {
@@ -125,7 +141,12 @@ function computeLayout(
         0,
         0,
         0
-      ).strength(0.3)
+      ).strength((d: SimulationNode) =>
+        // Isolated nodes (no edges in snapshot) get a much stronger radial pull so
+        // they stay on their importance shell and remain visible in the viewport.
+        // Connected nodes use a gentle 0.3 strength — link forces position them.
+        connectedNodeIds.has(d.id) ? 0.3 : 0.8
+      )
     )
     .alphaDecay(0.02)
     .velocityDecay(0.3)

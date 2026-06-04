@@ -1417,7 +1417,10 @@ function BatchedEdges({
     let visibleCount = 0;
 
     edges.forEach((edge) => {
-      if (!relationshipVisibility[edge.type]) return;
+      // Known types: respect the visibility toggle. Unknown types (future backend
+      // relationship types not yet in the enum) are shown by default so they don't
+      // silently vanish from the graph.
+      if (edge.type in relationshipVisibility && !relationshipVisibility[edge.type as keyof typeof relationshipVisibility]) return;
 
       const sourceNode = nodeById.get(edge.source);
       const targetNode = nodeById.get(edge.target);

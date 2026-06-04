@@ -349,6 +349,22 @@ export default function App() {
     return rawNodes.filter(n => n.importance <= maxImportance)
   }, [rawNodes, filters.importanceRange])
 
+  // Build a set of visible node IDs for fast edge membership checks
+  const visibleNodeIds = useMemo(() => new Set(nodes.map(n => n.id)), [nodes])
+
+  // Filter edges to only include those where BOTH endpoints are in the visible set.
+  // The API can return edges referencing nodes outside the current snapshot (e.g. when
+  // sampling limits the node count, or when the importance filter trims endpoints).
+  // Dangling edges cause nodes to appear orphaned (no visible connections) even though
+  // they have relationships — fixing this makes connected nodes always show their edges.
+  const filteredEdges = useMemo(() => {
+    if (edges === EMPTY_EDGES || visibleNodeIds.size === 0) return EMPTY_EDGES
+    const filtered = edges.filter(
+      e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+    )
+    return filtered.length === edges.length ? edges : filtered
+  }, [edges, visibleNodeIds])
+
   // Tag Cloud
   const tagCloud = useTagCloud({
     nodes,
@@ -414,7 +430,7 @@ export default function App() {
   // Pathfinding
   const pathfinding = usePathfinding({
     nodes: nodes as any,
-    edges,
+    edges: filteredEdges,
   })
 
   // Time Travel
@@ -957,7 +973,7 @@ export default function App() {
 
               <GraphCanvas
                 nodes={nodes}
-                edges={edges}
+                edges={filteredEdges}
                 selectedNode={selectedNode}
                 hoveredNode={hoveredNode}
                 searchTerm={searchTerm}
@@ -1080,7 +1096,7 @@ export default function App() {
               {/* Selection Actions (bulk operations) */}
               <SelectionActions
                 selectedNodes={lassoSelectedNodes}
-                allEdges={edges}
+                allEdges={filteredEdges}
                 onClearSelection={handleClearLassoSelection}
               />
             </div>
