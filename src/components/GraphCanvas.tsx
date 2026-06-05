@@ -262,7 +262,7 @@ export function GraphCanvas({
 
   return (
     <div
-      className={`relative w-full h-full transition-shadow duration-300 ${bimanualActive ? "ring-2 ring-inset ring-accent/50 shadow-[inset_0_0_30px_rgba(232,236,244,0.15)]" : ""}`}
+      className={`relative w-full h-full transition-shadow duration-300 ${bimanualActive ? "ring-2 ring-inset ring-white/40 shadow-[inset_0_0_30px_rgba(232,236,244,0.15)]" : ""}`}
     >
       <Canvas
         camera={{ position: [0, 0, 150], fov: 60 }}

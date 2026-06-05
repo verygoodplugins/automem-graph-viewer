@@ -107,7 +107,7 @@ export function TokenPrompt({ onSubmit }: TokenPromptProps) {
           >
             {isValidating ? (
               <>
-                <div className="w-5 h-5 border-2 border-void/30 border-t-void rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-black/20 border-t-black/80 rounded-full animate-spin" />
                 Connecting...
               </>
             ) : (

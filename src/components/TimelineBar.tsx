@@ -217,7 +217,7 @@ export function TimelineBar({
 
               {/* Playhead */}
               <div
-                className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg border border-void/40 transition-transform ${
+                className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg border border-black/40 transition-transform ${
                   isDragging ? 'scale-125' : 'hover:scale-110'
                 }`}
                 style={{ left: `calc(${progress * 100}% - 10px)` }}
