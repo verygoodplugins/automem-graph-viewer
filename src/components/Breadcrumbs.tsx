@@ -78,7 +78,7 @@ export function Breadcrumbs({
         type="button"
         onClick={onGoBack}
         disabled={!canGoBack}
-        className="p-0.5 rounded text-slate-500 hover:text-slate-300 disabled:opacity-30 disabled:cursor-default transition-colors"
+        className="p-0.5 rounded text-ink-3 hover:text-ink-2 disabled:opacity-30 disabled:cursor-default transition-colors"
         aria-label="Go back"
         title="Go back (Cmd+[)"
       >
@@ -88,7 +88,7 @@ export function Breadcrumbs({
         type="button"
         onClick={onGoForward}
         disabled={!canGoForward}
-        className="p-0.5 rounded text-slate-500 hover:text-slate-300 disabled:opacity-30 disabled:cursor-default transition-colors"
+        className="p-0.5 rounded text-ink-3 hover:text-ink-2 disabled:opacity-30 disabled:cursor-default transition-colors"
         aria-label="Go forward"
         title="Go forward (Cmd+])"
       >
@@ -114,8 +114,8 @@ export function Breadcrumbs({
               className={`
                 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] whitespace-nowrap transition-all flex-shrink-0
                 ${isCurrent
-                  ? 'bg-white/10 ring-1 ring-white/20 text-slate-200'
-                  : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                  ? 'bg-white/10 ring-1 ring-white/20 text-ink-2'
+                  : 'text-ink-3 hover:text-ink-2 hover:bg-white/5'
                 }
                 ${!entry.exists ? 'opacity-40 cursor-default' : ''}
               `}

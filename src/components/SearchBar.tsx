@@ -108,7 +108,7 @@ export function SearchBar({
             {chips.map((chip) => (
               <span
                 key={chip.id}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap bg-white/10 text-slate-200 transition-colors hover:bg-white/15 group"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap bg-white/10 text-ink-2 transition-colors hover:bg-white/15 group"
               >
                 <span
                   className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -118,7 +118,7 @@ export function SearchBar({
                 {onRemoveChip && (
                   <button
                     onClick={() => onRemoveChip(chip.id)}
-                    className="ml-0.5 text-slate-500 hover:text-slate-200 transition-colors"
+                    className="ml-0.5 text-ink-3 hover:text-ink-2 transition-colors"
                     aria-label={`Remove filter: ${chip.label}`}
                   >
                     <X className="w-3 h-3" />
@@ -129,7 +129,7 @@ export function SearchBar({
             {hasChips && onClearAll && chips.length > 1 && (
               <button
                 onClick={onClearAll}
-                className="text-[10px] text-slate-500 hover:text-slate-300 px-1 whitespace-nowrap transition-colors"
+                className="text-[10px] text-ink-3 hover:text-ink-2 px-1 whitespace-nowrap transition-colors"
                 aria-label="Clear all filters"
               >
                 Clear all
@@ -141,7 +141,7 @@ export function SearchBar({
         {/* Search input */}
         <div className="relative flex-1 min-w-[140px]">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="w-4 h-4 text-slate-500" />
+            <Search className="w-4 h-4 text-ink-3" />
           </div>
           <input
             type="text"
@@ -155,19 +155,19 @@ export function SearchBar({
               }
             }}
             placeholder={hasChips ? 'Search...' : 'Search memories, tags, or types...'}
-            className="w-full pl-9 pr-9 py-2 bg-black/30 border border-white/10 rounded-lg focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 outline-none transition-colors text-sm text-slate-100 placeholder-slate-500"
+            className="w-full pl-9 pr-9 py-2 bg-black/30 border border-white/10 rounded-lg focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors text-sm text-ink placeholder-ink-3"
           />
           {localValue && (
             <button
               onClick={handleClear}
               aria-label="Clear search"
-              className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-slate-300"
+              className="absolute inset-y-0 right-0 px-3 flex items-center text-ink-3 hover:text-ink-2"
             >
               <X className="w-4 h-4" />
             </button>
           )}
           {!localValue && !hasChips && (
-            <kbd className="absolute inset-y-0 right-0 hidden items-center pr-3 text-[10px] text-slate-500 sm:flex">
+            <kbd className="absolute inset-y-0 right-0 hidden items-center pr-3 text-[10px] text-ink-3 sm:flex">
               {modifierLabel} K
             </kbd>
           )}
@@ -176,8 +176,8 @@ export function SearchBar({
 
       {/* Filter count badge */}
       {showCount && (
-        <span className="text-xs text-slate-500 whitespace-nowrap flex-shrink-0">
-          <span className="text-slate-300">{matchingCount.toLocaleString()}</span>
+        <span className="font-mono text-xs text-ink-3 whitespace-nowrap flex-shrink-0">
+          <span className="text-ink-2">{matchingCount.toLocaleString()}</span>
           {' / '}
           {totalCount.toLocaleString()}
         </span>

@@ -17,7 +17,7 @@ interface StatsBarProps {
 export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter }: StatsBarProps) {
   if (isLoading || !stats) {
     return (
-      <div className="flex items-center gap-4 text-sm text-slate-500">
+      <div className="flex items-center gap-4 text-sm text-ink-3">
         <div className="flex items-center gap-1.5">
           <Database className="w-4 h-4" />
           <span>Loading...</span>
@@ -31,23 +31,23 @@ export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter
 
   return (
     <div className="flex items-center gap-4 text-sm">
-      <div className="flex items-center gap-1.5 text-slate-400">
-        <Database className="w-4 h-4 text-blue-400" />
-        <span>
+      <div className="flex items-center gap-1.5 text-ink-3">
+        <Database className="w-4 h-4 text-ink-3" />
+        <span className="font-mono">
           {showFilteredCount ? (
             <>
-              <span className="text-blue-300">
+              <span className="text-accent">
                 {clientVisibleCount.toLocaleString()}
               </span>
-              <span className="text-slate-500">
+              <span className="text-ink-3">
                 {' '}of {stats.returned_nodes.toLocaleString()}
               </span>
             </>
           ) : (
             <>
-              <span className="text-slate-200">{stats.returned_nodes.toLocaleString()}</span>
+              <span className="text-ink-2">{stats.returned_nodes.toLocaleString()}</span>
               {stats.sampled && (
-                <span className="text-slate-500">
+                <span className="text-ink-3">
                   {' '}/ {stats.total_nodes.toLocaleString()}
                 </span>
               )}
@@ -55,12 +55,12 @@ export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter
           )}
         </span>
       </div>
-      <div className="flex items-center gap-1.5 text-slate-400">
-        <GitBranch className="w-4 h-4 text-purple-400" />
-        <span>
-          <span className="text-slate-200">{stats.returned_edges.toLocaleString()}</span>
+      <div className="flex items-center gap-1.5 text-ink-3">
+        <GitBranch className="w-4 h-4 text-ink-3" />
+        <span className="font-mono">
+          <span className="text-ink-2">{stats.returned_edges.toLocaleString()}</span>
           {stats.sampled && (
-            <span className="text-slate-500">
+            <span className="text-ink-3">
               {' '}/ {stats.total_edges.toLocaleString()}
             </span>
           )}
