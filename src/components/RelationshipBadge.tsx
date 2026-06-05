@@ -42,12 +42,12 @@ export function RelationshipBadge({
       />
 
       {/* Direction arrow */}
-      <span className="text-slate-500 text-[10px]">
+      <span className="text-ink-4 text-[10px]">
         {DIRECTION_ARROWS[direction]}
       </span>
 
       {/* Label */}
-      <span className={isVisible ? 'text-slate-300' : 'text-slate-500 line-through'}>
+      <span className={isVisible ? 'text-ink-2' : 'text-ink-4 line-through'}>
         {style.label}
       </span>
 
