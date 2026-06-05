@@ -627,8 +627,12 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen bg-void text-ink flex flex-col overflow-hidden">
+      {/* Atmosphere — fixed gradient-mesh + contour grid + grain behind the
+          transparent WebGL canvas and translucent glass rails (zero GPU cost) */}
+      <div className="atmosphere" aria-hidden="true" />
+
       {/* Top Bar */}
-      <header className="h-14 flex-shrink-0 glass border-b border-hairline flex items-center px-4 gap-4 z-50 overflow-x-auto overflow-y-hidden">
+      <header className="reveal h-14 flex-shrink-0 glass border-b border-hairline flex items-center px-4 gap-4 z-50 overflow-x-auto overflow-y-hidden">
         <div className="flex items-center gap-2.5 pr-1 select-none">
           <span className="text-accent text-lg leading-none drop-shadow-[0_0_8px_var(--accent-glow)]" aria-hidden>
             ✦
@@ -782,7 +786,7 @@ export default function App() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="reveal flex-1 flex overflow-hidden" style={{ animationDelay: '90ms' }}>
         <PanelGroup direction="horizontal" className="flex-1">
           {/* Graph Canvas */}
           <Panel defaultSize={75} minSize={40}>

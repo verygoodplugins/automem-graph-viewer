@@ -272,7 +272,9 @@ export function GraphCanvas({
           powerPreference: "high-performance",
         }}
         style={{
-          background: "linear-gradient(to bottom, #0a0a0f 0%, #0f0f18 100%)",
+          // Transparent so the fixed `.atmosphere` backdrop (gradient-mesh,
+          // contour grid, grain) shows through the WebGL clear.
+          background: "transparent",
         }}
         frameloop={performanceMode ? "demand" : "always"}
       >
