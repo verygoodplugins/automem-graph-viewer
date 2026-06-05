@@ -104,11 +104,11 @@ export function SettingsPanel({
     <div className="h-full w-72 glass flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <h2 className="text-sm font-semibold text-slate-200">Graph Settings</h2>
+        <h2 className="font-display text-sm font-semibold text-ink">Graph Settings</h2>
         <button
           onClick={onClose}
           aria-label="Close settings"
-          className="p-2.5 rounded hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
+          className="p-2.5 rounded hover:bg-white/10 text-ink-3 hover:text-ink transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
@@ -120,7 +120,7 @@ export function SettingsPanel({
         <SettingsSection title="Filters" defaultOpen={true}>
           {/* Memory Types */}
           <div className="space-y-1.5">
-            <label className="text-xs text-slate-400">Memory Types</label>
+            <label className="text-xs text-ink-3">Memory Types</label>
             <div className="flex flex-wrap gap-1">
               {MEMORY_TYPES.map((type) => {
                 const isSelected = filters.types.length === 0 || filters.types.includes(type)
@@ -132,8 +132,8 @@ export function SettingsPanel({
                     className={`
                       flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-all
                       ${isSelected
-                        ? 'bg-white/10 text-slate-200'
-                        : 'bg-white/5 text-slate-500 opacity-50'
+                        ? 'bg-white/10 text-ink-2'
+                        : 'bg-white/5 text-ink-3 opacity-50'
                       }
                     `}
                   >
@@ -149,7 +149,7 @@ export function SettingsPanel({
             {filters.types.length > 0 && (
               <button
                 onClick={() => onFiltersChange({ types: [] })}
-                className="text-xs text-slate-500 hover:text-slate-300"
+                className="text-xs text-ink-3 hover:text-ink-2"
               >
                 Clear filter
               </button>
@@ -167,7 +167,7 @@ export function SettingsPanel({
           />
 
           <div className="space-y-1.5">
-            <label className="text-xs text-slate-400">Overview size</label>
+            <label className="text-xs text-ink-3">Overview size</label>
             <div className="flex gap-1">
               {[500, 1000, 2000].map((n) => (
                 <button
@@ -176,8 +176,8 @@ export function SettingsPanel({
                   className={`
                     flex-1 py-1 text-xs rounded transition-colors
                     ${filters.maxNodes === n
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                      ? 'bg-accent text-void'
+                      : 'bg-white/5 text-ink-3 hover:bg-white/10'
                     }
                   `}
                 >
@@ -185,64 +185,10 @@ export function SettingsPanel({
                 </button>
               ))}
             </div>
-            <p className="text-[10px] leading-tight text-slate-500">
+            <p className="text-[10px] leading-tight text-ink-3">
               Loads the most important memories first. Click any node to expand
               its full neighborhood.
             </p>
-          </div>
-        </SettingsSection>
-
-        {/* Relationships Section */}
-        <SettingsSection title="Relationships" defaultOpen={false}>
-          <div className="space-y-1">
-            {(Object.keys(RELATIONSHIP_INFO) as RelationType[]).map((rel) => {
-              const info = RELATIONSHIP_INFO[rel]
-              const isVisible = relationshipVisibility[rel]
-              return (
-                <button
-                  key={rel}
-                  onClick={() => onRelationshipVisibilityChange({ [rel]: !isVisible })}
-                  className={`
-                    w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all
-                    ${isVisible
-                      ? 'bg-white/5 text-slate-300'
-                      : 'text-slate-600'
-                    }
-                  `}
-                >
-                  <div
-                    className={`w-4 h-0.5 ${
-                      info.style === 'dashed' ? 'border-t border-dashed' :
-                      info.style === 'dotted' ? 'border-t border-dotted' :
-                      ''
-                    }`}
-                    style={{
-                      backgroundColor: info.style === 'solid' ? info.color : 'transparent',
-                      borderColor: info.color,
-                    }}
-                  />
-                  <span className="flex-1 text-left">{info.label}</span>
-                  <div
-                    className={`w-3 h-3 rounded border transition-colors ${
-                      isVisible
-                        ? 'bg-blue-500 border-blue-500'
-                        : 'border-slate-600'
-                    }`}
-                  >
-                    {isVisible && (
-                      <svg className="w-full h-full text-white" viewBox="0 0 12 12">
-                        <path
-                          d="M2 6l3 3 5-5"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          fill="none"
-                        />
-                      </svg>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
           </div>
         </SettingsSection>
 
@@ -304,10 +250,71 @@ export function SettingsPanel({
           />
         </SettingsSection>
 
+        {/* Advanced — power-user controls below the fold */}
+        <div className="px-4 pt-3 pb-1 border-t border-white/5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-4">
+            Advanced
+          </span>
+        </div>
+
+        {/* Relationships Section */}
+        <SettingsSection title="Relationships" defaultOpen={false}>
+          <div className="space-y-1">
+            {(Object.keys(RELATIONSHIP_INFO) as RelationType[]).map((rel) => {
+              const info = RELATIONSHIP_INFO[rel]
+              const isVisible = relationshipVisibility[rel]
+              return (
+                <button
+                  key={rel}
+                  onClick={() => onRelationshipVisibilityChange({ [rel]: !isVisible })}
+                  className={`
+                    w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-all
+                    ${isVisible
+                      ? 'bg-white/5 text-ink-2'
+                      : 'text-ink-4'
+                    }
+                  `}
+                >
+                  <div
+                    className={`w-4 h-0.5 ${
+                      info.style === 'dashed' ? 'border-t border-dashed' :
+                      info.style === 'dotted' ? 'border-t border-dotted' :
+                      ''
+                    }`}
+                    style={{
+                      backgroundColor: info.style === 'solid' ? info.color : 'transparent',
+                      borderColor: info.color,
+                    }}
+                  />
+                  <span className="flex-1 text-left">{info.label}</span>
+                  <div
+                    className={`w-3 h-3 rounded border transition-colors ${
+                      isVisible
+                        ? 'bg-accent border-accent'
+                        : 'border-white/20'
+                    }`}
+                  >
+                    {isVisible && (
+                      <svg className="w-full h-full text-void" viewBox="0 0 12 12">
+                        <path
+                          d="M2 6l3 3 5-5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          fill="none"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </SettingsSection>
+
         {/* Clustering Section */}
         <SettingsSection title="Clustering" defaultOpen={false}>
           <div className="space-y-1.5">
-            <label className="text-xs text-slate-400">Cluster Mode</label>
+            <label className="text-xs text-ink-3">Cluster Mode</label>
             <div className="grid grid-cols-2 gap-1">
               {CLUSTER_MODES.map(({ value, label }) => (
                 <button
@@ -316,8 +323,8 @@ export function SettingsPanel({
                   className={`
                     py-1.5 text-xs rounded transition-colors
                     ${clusterConfig.mode === value
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                      ? 'bg-accent text-void'
+                      : 'bg-white/5 text-ink-3 hover:bg-white/10'
                     }
                   `}
                 >
@@ -327,7 +334,7 @@ export function SettingsPanel({
             </div>
           </div>
 
-          <p className="text-[10px] text-slate-500 leading-relaxed">
+          <p className="text-[10px] text-ink-3 leading-relaxed">
             {CLUSTER_MODES.find(m => m.value === clusterConfig.mode)?.description}
           </p>
 
@@ -412,14 +419,14 @@ export function SettingsPanel({
           <div className="flex gap-2 pt-2">
             <button
               onClick={onReheat}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-500 hover:bg-blue-400 text-white text-xs rounded transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-accent hover:bg-white text-void text-xs rounded transition-colors"
             >
               <Zap className="w-3 h-3" />
               Reheat
             </button>
             <button
               onClick={onResetForces}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/10 hover:bg-white/20 text-slate-300 text-xs rounded transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-white/10 hover:bg-white/20 text-ink-2 text-xs rounded transition-colors"
             >
               <RotateCcw className="w-3 h-3" />
               Reset
@@ -440,7 +447,7 @@ export function SettingsPanel({
             {soundEnabled && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Volume2 className="w-4 h-4 text-slate-400" />
+                  <Volume2 className="w-4 h-4 text-ink-3" />
                   <SliderControl
                     label="Master Volume"
                     value={soundVolume}
@@ -452,7 +459,7 @@ export function SettingsPanel({
                   />
                 </div>
 
-                <p className="text-[10px] text-slate-500 leading-relaxed">
+                <p className="text-[10px] text-ink-3 leading-relaxed">
                   Sounds include: node select, hover, zoom, search typing, and more.
                 </p>
               </div>
