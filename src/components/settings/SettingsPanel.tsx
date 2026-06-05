@@ -167,9 +167,9 @@ export function SettingsPanel({
           />
 
           <div className="space-y-1.5">
-            <label className="text-xs text-slate-400">Max Nodes</label>
+            <label className="text-xs text-slate-400">Overview size</label>
             <div className="flex gap-1">
-              {[500, 2000, 5000, 0].map((n) => (
+              {[500, 1000, 2000].map((n) => (
                 <button
                   key={n}
                   onClick={() => onFiltersChange({ maxNodes: n })}
@@ -181,10 +181,14 @@ export function SettingsPanel({
                     }
                   `}
                 >
-                  {n === 0 ? 'All' : n.toLocaleString()}
+                  {n.toLocaleString()}
                 </button>
               ))}
             </div>
+            <p className="text-[10px] leading-tight text-slate-500">
+              Loads the most important memories first. Click any node to expand
+              its full neighborhood.
+            </p>
           </div>
         </SettingsSection>
 
