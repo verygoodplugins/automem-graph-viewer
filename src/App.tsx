@@ -786,14 +786,14 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#0a0a0f] text-slate-100 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-void text-ink flex flex-col overflow-hidden">
       {/* Top Bar */}
-      <header className="h-14 flex-shrink-0 glass border-b border-white/5 flex items-center px-4 gap-4 z-50 overflow-x-auto overflow-y-hidden">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <span className="text-white font-bold text-sm">AM</span>
-          </div>
-          <h1 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+      <header className="h-14 flex-shrink-0 glass border-b border-hairline flex items-center px-4 gap-4 z-50 overflow-x-auto overflow-y-hidden">
+        <div className="flex items-center gap-2.5 pr-1 select-none">
+          <span className="text-accent text-lg leading-none drop-shadow-[0_0_8px_var(--accent-glow)]" aria-hidden>
+            ✦
+          </span>
+          <h1 className="font-display text-[1.15rem] font-medium tracking-tight text-ink">
             AutoMem
           </h1>
         </div>
@@ -823,8 +823,8 @@ export default function App() {
           className={`
             flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
             ${performanceMode
-              ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-yellow-500/25'
-              : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+              ? 'bg-surface-2 text-accent shadow-elev-focus'
+              : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
             }
           `}
           title={performanceMode ? 'Disable performance mode (enable effects)' : 'Enable performance mode (disable bloom/vignette for faster rendering)'}
@@ -841,8 +841,8 @@ export default function App() {
             className={`
               flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
               ${gestureControlEnabled
-                ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg shadow-cyan-500/25'
-                : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                ? 'bg-surface-2 text-accent shadow-elev-focus'
+                : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
               }
             `}
             title={gestureControlEnabled ? 'Disable hand gestures' : 'Enable hand gestures (requires camera)'}
@@ -860,8 +860,8 @@ export default function App() {
             className={`
               flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
               ${debugOverlayVisible
-                ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/25'
-                : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                ? 'bg-surface-2 text-accent shadow-elev-focus'
+                : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
               }
             `}
             title={debugOverlayVisible ? 'Hide debug overlay' : 'Show gesture debug overlay'}
@@ -902,7 +902,7 @@ export default function App() {
 
         <button
           onClick={() => setShortcutsHelpOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all duration-200"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink transition-all duration-200"
           title="Keyboard shortcuts (?)"
           aria-label="Open keyboard shortcuts help"
         >
@@ -916,8 +916,8 @@ export default function App() {
           className={`
             flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
             ${settingsPanelOpen
-              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
-              : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+              ? 'bg-surface-2 text-accent shadow-elev-focus'
+              : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
             }
           `}
           title={settingsPanelOpen ? 'Hide settings' : 'Show graph settings'}

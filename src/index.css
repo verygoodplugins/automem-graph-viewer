@@ -2,15 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * "Observatory of Memory" design tokens.
+ * A dark astronomical-instrument aesthetic: the graph is a starfield, the
+ * chrome is the instrument panel. Boldness comes from atmosphere and luminance,
+ * not a loud hue — the eight per-type node colors (tailwind.config.js) stay the
+ * only saturated color in the product. The signature accent is a cold near-white
+ * instrument light, deliberately outside all eight data hues.
+ *
+ * The whole aesthetic lives here + in tailwind.config.js + the font <link>, so
+ * it can be re-skinned without touching component structure.
+ */
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a24;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border: #2d2d3a;
-  --accent: #3b82f6;
+  /* Void / surface ladder (cold, blue-tinged darks) */
+  --void: #07080d;
+  --surface-0: #0b0d14;
+  --surface-1: #11141d;
+  --surface-2: #181c28;
+  --surface-3: #222736;
+
+  /* Cold hairlines */
+  --hairline: rgba(180, 196, 224, 0.08);
+  --hairline-strong: rgba(180, 196, 224, 0.16);
+
+  /* Text ladder */
+  --text-primary: #eef1f7;
+  --text-secondary: #aeb7c9;
+  --text-muted: #7a8398;
+  --text-faint: #515a6e;
+
+  /* Signature accent — cold instrument light, outside the 8 data hues */
+  --accent: #e8ecf4;
+  --accent-glow: rgba(232, 236, 244, 0.45);
+  --accent-dim: #9ba8c0;
+
+  /* Narrow, desaturated status palette */
+  --ok: #3fb6a8;
+  --warn: #c9a24b;
+  --danger: #d45d6b;
+
+  /* Radius scale */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+
+  /* Elevation */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --elev-2: 0 8px 30px rgba(0, 0, 0, 0.55);
+  --elev-focus: 0 0 0 1px var(--accent), 0 0 24px var(--accent-glow);
+
+  /* Signature easing — a confident instrument settle */
+  --ease-instrument: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -18,7 +61,8 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -30,47 +74,93 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: var(--surface-1);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: var(--hairline-strong);
+  border-radius: var(--r-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--text-faint);
 }
 
-/* Glass effect for panels */
+/* Glass effect for panels — consumed by header, inspector, settings, overlays */
 .glass {
-  background: rgba(18, 18, 26, 0.8);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(17, 20, 29, 0.72);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid var(--hairline);
 }
 
-/* Glow effects */
-.glow-blue {
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+/* A heavier rail variant for the docked chrome columns */
+.glass-rail {
+  background: linear-gradient(
+    180deg,
+    rgba(17, 20, 29, 0.82),
+    rgba(11, 13, 20, 0.82)
+  );
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--elev-2);
 }
 
-.glow-green {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+/*
+ * Atmosphere layer — a fixed, pointer-events-none backdrop behind the WebGL
+ * canvas. Gradient-mesh + faint contour grid + grain, all in CSS/SVG, so it
+ * costs zero WebGL frame time. Sits at the very back (z -1).
+ */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 18% 8%, rgba(45, 60, 96, 0.22), transparent 55%),
+    radial-gradient(90% 80% at 88% 92%, rgba(30, 44, 74, 0.2), transparent 55%),
+    radial-gradient(70% 60% at 50% 50%, rgba(12, 16, 26, 0), rgba(5, 6, 10, 0.6) 100%),
+    var(--void);
 }
 
-.glow-purple {
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+.atmosphere::before {
+  /* Faint contour grid */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(70% 70% at 50% 50%, black, transparent 100%);
+  -webkit-mask-image: radial-gradient(70% 70% at 50% 50%, black, transparent 100%);
+  opacity: 0.4;
 }
 
-/* Lasso selection animated dash */
-@keyframes dash {
+.atmosphere::after {
+  /* ~3% film grain via SVG feTurbulence */
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* A staggered, orchestrated reveal for chrome panels on first paint */
+@keyframes instrument-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
   to {
-    stroke-dashoffset: -24;
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.animate-dash {
-  animation: dash 0.5s linear infinite;
+.reveal {
+  animation: instrument-reveal 0.5s var(--ease-instrument) both;
 }
 
 /* Hide scrollbar but keep scroll functionality */
