@@ -626,9 +626,13 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-void text-ink flex flex-col overflow-hidden">
+    <div className="h-screen w-screen text-ink flex flex-col overflow-hidden">
       {/* Atmosphere — fixed gradient-mesh + contour grid + grain behind the
-          transparent WebGL canvas and translucent glass rails (zero GPU cost) */}
+          transparent WebGL canvas and translucent glass rails (zero GPU cost).
+          NOTE: this root div deliberately carries NO bg-* — an opaque full-bleed
+          background here paints at stacking step 3 (in-flow block bg) and would
+          occlude the z-index:-1 atmosphere at step 2. The base color sits on
+          <html> (index.html); the atmosphere supplies the rest. */}
       <div className="atmosphere" aria-hidden="true" />
 
       {/* Top Bar */}

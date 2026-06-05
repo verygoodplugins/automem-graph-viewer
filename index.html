@@ -18,6 +18,13 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
+      }
+      /* Base color lives ONLY on <html> (propagated to the viewport canvas, so
+         it paints behind everything as the pre-mount fallback). body / #root /
+         the app root div must NOT carry an opaque full-bleed background, or they
+         paint at stacking step 3 — over the z-index:-1 `.atmosphere` at step 2 —
+         and occlude it. See the `.atmosphere` note in src/index.css. */
+      html {
         background: #07080D;
       }
     </style>
