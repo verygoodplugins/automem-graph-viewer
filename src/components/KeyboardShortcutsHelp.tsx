@@ -77,8 +77,7 @@ export function KeyboardShortcutsHelp({
           </div>
 
           <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs text-slate-400">
-            Additional controls: hold <kbd className="font-mono text-slate-300">Shift</kbd> and drag to lasso,
-            press <kbd className="font-mono text-slate-300">T</kbd> for tag cloud.
+            Additional controls: press <kbd className="font-mono text-slate-300">T</kbd> for tag cloud.
           </div>
         </div>
       </div>

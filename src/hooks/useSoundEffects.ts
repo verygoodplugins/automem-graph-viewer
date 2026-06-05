@@ -26,7 +26,6 @@ export interface UseSoundEffectsReturn {
   playSuccess: () => void
   playPathFound: () => void
   playTimeTravel: () => void
-  playLasso: () => void
 }
 
 export function useSoundEffects(): UseSoundEffectsReturn {
@@ -97,10 +96,6 @@ export function useSoundEffects(): UseSoundEffectsReturn {
     soundManager.playTimeTravel()
   }, [])
 
-  const playLasso = useCallback(() => {
-    soundManager.playLasso()
-  }, [])
-
   return {
     settings,
     setMasterVolume,
@@ -117,6 +112,5 @@ export function useSoundEffects(): UseSoundEffectsReturn {
     playSuccess,
     playPathFound,
     playTimeTravel,
-    playLasso,
   }
 }

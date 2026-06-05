@@ -151,11 +151,6 @@ interface GraphCanvasProps {
   // Time Travel: filter nodes by timestamp
   timeTravelActive?: boolean;
   timeTravelVisibleNodes?: Set<string>;
-  // Lasso selection
-  onGetNodesInPolygon?: (
-    fn: (polygon: { x: number; y: number }[]) => string[],
-  ) => void;
-  lassoSelectedIds?: Set<string>;
   // Tag cloud filtering
   tagFilteredNodeIds?: Set<string>;
   hasTagFilter?: boolean;
@@ -194,8 +189,6 @@ export function GraphCanvas({
   isPathSelecting,
   timeTravelActive = false,
   timeTravelVisibleNodes,
-  onGetNodesInPolygon,
-  lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
   onClusterSelect,
@@ -329,8 +322,6 @@ export function GraphCanvas({
           isPathSelecting={isPathSelecting}
           timeTravelActive={timeTravelActive}
           timeTravelVisibleNodes={timeTravelVisibleNodes}
-          onGetNodesInPolygon={onGetNodesInPolygon}
-          lassoSelectedIds={lassoSelectedIds}
           tagFilteredNodeIds={tagFilteredNodeIds}
           hasTagFilter={hasTagFilter}
           onBimanualGrabChange={setBimanualActive}
@@ -381,11 +372,6 @@ interface SceneProps extends Omit<
   // Time Travel
   timeTravelActive?: boolean;
   timeTravelVisibleNodes?: Set<string>;
-  // Lasso selection
-  onGetNodesInPolygon?: (
-    fn: (polygon: { x: number; y: number }[]) => string[],
-  ) => void;
-  lassoSelectedIds?: Set<string>;
   // Tag cloud filtering
   tagFilteredNodeIds?: Set<string>;
   hasTagFilter?: boolean;
@@ -423,8 +409,6 @@ function Scene({
   isPathSelecting: _isPathSelecting,
   timeTravelActive = false,
   timeTravelVisibleNodes,
-  onGetNodesInPolygon,
-  lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
   onBimanualGrabChange,
@@ -736,60 +720,6 @@ function Scene({
   }, [hoveredNode, clusters]);
 
   const hoveredClusterId = explicitHoveredClusterId ?? derivedHoveredClusterId;
-
-  // Get nodes inside a screen-space polygon (for lasso selection)
-  const getNodesInPolygon = useCallback(
-    (polygon: { x: number; y: number }[]) => {
-      if (polygon.length < 3) return [];
-
-      const canvas = document.querySelector("canvas");
-      if (!canvas) return [];
-      const rect = canvas.getBoundingClientRect();
-
-      const isPointInPolygon = (point: { x: number; y: number }) => {
-        let inside = false;
-        const n = polygon.length;
-        for (let i = 0, j = n - 1; i < n; j = i++) {
-          const xi = polygon[i].x;
-          const yi = polygon[i].y;
-          const xj = polygon[j].x;
-          const yj = polygon[j].y;
-          if (
-            yi > point.y !== yj > point.y &&
-            point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi
-          ) {
-            inside = !inside;
-          }
-        }
-        return inside;
-      };
-
-      const ap = animPositions.current;
-      const result: string[] = [];
-      layoutNodes.forEach((node, i) => {
-        const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0);
-        const py = ap.length > i * 3 + 1 ? ap[i * 3 + 1] : (node.y ?? 0);
-        const pz = ap.length > i * 3 + 2 ? ap[i * 3 + 2] : (node.z ?? 0);
-        const worldPos = new THREE.Vector3(px, py, pz);
-        if (groupRef.current) groupRef.current.localToWorld(worldPos);
-        const projected = worldPos.project(camera);
-        const screenX = ((projected.x + 1) / 2) * rect.width;
-        const screenY = ((-projected.y + 1) / 2) * rect.height;
-
-        if (isPointInPolygon({ x: screenX, y: screenY })) {
-          result.push(node.id);
-        }
-      });
-
-      return result;
-    },
-    [layoutNodes, camera, animPositions],
-  );
-
-  // Expose getNodesInPolygon to parent
-  useEffect(() => {
-    onGetNodesInPolygon?.(getNodesInPolygon);
-  }, [getNodesInPolygon, onGetNodesInPolygon]);
 
   const [autoRotate, setAutoRotate] = useState(false);
   const groupRef = useRef<THREE.Group>(null);
@@ -1298,7 +1228,6 @@ function Scene({
           pathTargetId={pathTargetId}
           timeTravelActive={timeTravelActive}
           timeTravelVisibleNodes={timeTravelVisibleNodes}
-          lassoSelectedIds={lassoSelectedIds}
           tagFilteredNodeIds={tagFilteredNodeIds}
           hasTagFilter={hasTagFilter}
         />
@@ -1632,7 +1561,6 @@ interface InstancedNodesProps {
   pathTargetId?: string | null;
   timeTravelActive?: boolean;
   timeTravelVisibleNodes?: Set<string>;
-  lassoSelectedIds?: Set<string>;
   tagFilteredNodeIds?: Set<string>;
   hasTagFilter?: boolean;
 }
@@ -1655,7 +1583,6 @@ function InstancedNodes({
   pathTargetId,
   timeTravelActive = false,
   timeTravelVisibleNodes,
-  lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
 }: InstancedNodesProps) {
@@ -1822,7 +1749,6 @@ function InstancedNodes({
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoveredNode?.id === node.id;
       const isSearchMatch = !!searchTerm && matchingIds.has(node.id);
-      const isLassoSelected = lassoSelectedIds?.has(node.id) ?? false;
 
       // Pathfinding state
       const isPathSource = pathSourceId === node.id;
@@ -1860,10 +1786,6 @@ function InstancedNodes({
         } else if (isInPath) {
           targetScale = Math.max(targetScale, 1.2);
         }
-        // Lasso selected nodes get a slight boost
-        if (isLassoSelected && !isSelected) {
-          targetScale = Math.max(targetScale, 1.15);
-        }
       }
       targetScalesRef.current[i] = targetScale;
 
@@ -1897,7 +1819,7 @@ function InstancedNodes({
       );
       zOffsetsRef.current[i] = newZOffset;
 
-      // Apply pulsing for search matches, path nodes, and lasso selected
+      // Apply pulsing for search matches and path nodes
       let finalScale = newScale;
       if (isSearchMatch) {
         const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.15;
@@ -1906,11 +1828,6 @@ function InstancedNodes({
       if (isInPath && !isPathSource && !isPathTarget) {
         // Subtle pulse for intermediate path nodes
         const pulse = 1 + Math.sin(performance.now() * 0.003) * 0.08;
-        finalScale *= pulse;
-      }
-      if (isLassoSelected && !isSelected) {
-        // Gentle pulse for lasso selected nodes
-        const pulse = 1 + Math.sin(performance.now() * 0.0025) * 0.06;
         finalScale *= pulse;
       }
 
@@ -1935,7 +1852,7 @@ function InstancedNodes({
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       mesh.setMatrixAt(i, tempMatrix);
 
-      // Set color with special handling for path nodes and lasso selection
+      // Set color with special handling for path nodes
       if (isPathSource) {
         // Source node: bright green
         tempColor.set("#22c55e");
@@ -1945,28 +1862,21 @@ function InstancedNodes({
       } else if (isInPath) {
         // Intermediate path nodes: electric cyan
         tempColor.set("#00d4ff");
-      } else if (isLassoSelected) {
-        // Lasso selected nodes: blue tint
-        tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color);
-        // Add blue tint by lerping toward blue
-        const blueColor = new THREE.Color("#3b82f6");
-        tempColor.lerp(blueColor, 0.35);
       } else {
         // Use vibrant frontend palette, falling back to API color
         tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color);
       }
 
-      if (isDimmed && !isInPath && !isLassoSelected) {
+      if (isDimmed && !isInPath) {
         tempColor.multiplyScalar(0.5);
       } else if (
         isSelected ||
         isHovered ||
         isSearchMatch ||
-        isInPath ||
-        isLassoSelected
+        isInPath
       ) {
-        // Brighten selected/hovered/path/lasso nodes
-        tempColor.multiplyScalar(isInPath ? 1.3 : isLassoSelected ? 1.15 : 1.2);
+        // Brighten selected/hovered/path nodes
+        tempColor.multiplyScalar(isInPath ? 1.3 : 1.2);
       } else {
         // Recent nodes glow brighter - subtle pulsing brightness
         const nodeTimestamp = node.timestamp
@@ -1985,8 +1895,8 @@ function InstancedNodes({
           tempColor.multiplyScalar(1 + recentnessFactor * 0.15 * glowPulse);
         }
       }
-      // Apply focus mode opacity (but don't dim path or lasso selected nodes)
-      if (!isInPath && !isLassoSelected) {
+      // Apply focus mode opacity (but don't dim path nodes)
+      if (!isInPath) {
         tempColor.multiplyScalar(focusOpacity);
       }
       mesh.setColorAt(i, tempColor);

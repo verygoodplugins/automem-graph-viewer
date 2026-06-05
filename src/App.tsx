@@ -19,8 +19,6 @@ import { BookmarksPanel } from './components/BookmarksPanel'
 import { PathfindingOverlay } from './components/PathfindingOverlay'
 import { TimelineBar } from './components/TimelineBar'
 import { RadialMenu } from './components/RadialMenu'
-import { LassoOverlay } from './components/LassoOverlay'
-import { SelectionActions } from './components/SelectionActions'
 import { TagCloud } from './components/TagCloud'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
 import { useHandLockAndGrab } from './hooks/useHandLockAndGrab'
@@ -147,18 +145,7 @@ export default function App() {
     position: { x: 0, y: 0 },
   })
 
-  // Lasso selection state
-  const [lassoState, setLassoState] = useState<{
-    isDrawing: boolean
-    points: { x: number; y: number }[]
-    selectedIds: Set<string>
-  }>({
-    isDrawing: false,
-    points: [],
-    selectedIds: new Set(),
-  })
   const canvasContainerRef = useRef<HTMLDivElement>(null)
-  const getNodesInPolygonRef = useRef<((polygon: { x: number; y: number }[]) => string[]) | null>(null)
 
   // Tag cloud state
   const [tagCloudVisible, setTagCloudVisible] = useState(false)
@@ -576,75 +563,6 @@ export default function App() {
     setSelectedNode(node)
   }, [])
 
-  // Lasso selection handlers
-  const handleLassoStart = useCallback((x: number, y: number) => {
-    setLassoState(prev => ({
-      ...prev,
-      isDrawing: true,
-      points: [{ x, y }],
-    }))
-  }, [])
-
-  const handleLassoMove = useCallback((x: number, y: number) => {
-    setLassoState(prev => {
-      if (!prev.isDrawing) return prev
-      // Only add point if moved enough to avoid too many points
-      const lastPoint = prev.points[prev.points.length - 1]
-      if (lastPoint) {
-        const dist = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2))
-        if (dist < 3) return prev
-      }
-      return {
-        ...prev,
-        points: [...prev.points, { x, y }],
-      }
-    })
-  }, [])
-
-  const handleLassoEnd = useCallback(() => {
-    setLassoState(prev => {
-      if (!prev.isDrawing || prev.points.length < 3) {
-        return { ...prev, isDrawing: false, points: [] }
-      }
-
-      // Call GraphCanvas to find nodes in the polygon
-      const nodesInPolygon = getNodesInPolygonRef.current?.(prev.points) ?? []
-      const newSelectedIds = new Set(prev.selectedIds)
-      nodesInPolygon.forEach(id => newSelectedIds.add(id))
-
-      // Play lasso sound if nodes were selected
-      if (nodesInPolygon.length > 0) {
-        sound.playLasso()
-      }
-
-      return {
-        isDrawing: false,
-        points: [],
-        selectedIds: newSelectedIds,
-      }
-    })
-  }, [sound.playLasso])
-
-  const handleLassoCancel = useCallback(() => {
-    setLassoState(prev => ({
-      ...prev,
-      isDrawing: false,
-      points: [],
-    }))
-  }, [])
-
-  const handleClearLassoSelection = useCallback(() => {
-    setLassoState(prev => ({
-      ...prev,
-      selectedIds: new Set(),
-    }))
-  }, [])
-
-  // Get selected nodes from lasso
-  const lassoSelectedNodes = useMemo(() => {
-    if (nodes.length === 0 || lassoState.selectedIds.size === 0) return []
-    return nodes.filter(n => lassoState.selectedIds.has(n.id))
-  }, [nodes, lassoState.selectedIds])
 
   const handleSearch = useCallback((term: string) => {
     // Play search sound on typing (only if term changed and is not empty)
@@ -1011,8 +929,6 @@ export default function App() {
                 isPathSelecting={pathfinding.isSelectingTarget}
                 timeTravelActive={timeTravel.isActive}
                 timeTravelVisibleNodes={timeTravel.visibleNodes}
-                onGetNodesInPolygon={(fn) => { getNodesInPolygonRef.current = fn }}
-                lassoSelectedIds={lassoState.selectedIds}
                 tagFilteredNodeIds={tagCloud.filteredNodeIds}
                 hasTagFilter={tagCloud.hasActiveFilter}
               />
@@ -1092,23 +1008,6 @@ export default function App() {
                 onGoToEnd={timeTravel.goToEnd}
               />
 
-              {/* Lasso Selection Overlay */}
-              <LassoOverlay
-                isDrawing={lassoState.isDrawing}
-                points={lassoState.points}
-                selectedCount={lassoState.selectedIds.size}
-                onStartDraw={handleLassoStart}
-                onMoveDraw={handleLassoMove}
-                onEndDraw={handleLassoEnd}
-                onCancelDraw={handleLassoCancel}
-              />
-
-              {/* Selection Actions (bulk operations) */}
-              <SelectionActions
-                selectedNodes={lassoSelectedNodes}
-                allEdges={filteredEdges}
-                onClearSelection={handleClearLassoSelection}
-              />
             </div>
           </Panel>
 

@@ -27,7 +27,6 @@ type SoundType =
   | 'success'
   | 'pathFound'
   | 'timeTravel'
-  | 'lasso'
 
 interface SoundSettings {
   masterVolume: number // 0-1
@@ -50,7 +49,6 @@ const DEFAULT_SETTINGS: SoundSettings = {
     success: true,
     pathFound: true,
     timeTravel: true,
-    lasso: true,
   },
 }
 
@@ -533,34 +531,6 @@ class SoundManager {
 
     source.connect(filter).connect(gain).connect(ctx.destination)
     source.start(now)
-  }
-
-  /**
-   * Lasso selection complete
-   */
-  playLasso() {
-    if (!this.canPlay('lasso')) return
-
-    const ctx = this.getContext()
-    if (!ctx) return
-
-    const now = ctx.currentTime
-    const volume = this.getVolume() * 0.15
-
-    // Quick ascending sweep
-    const osc = ctx.createOscillator()
-    osc.type = 'triangle'
-    osc.frequency.setValueAtTime(300, now)
-    osc.frequency.exponentialRampToValueAtTime(600, now + 0.1)
-
-    const gain = ctx.createGain()
-    gain.gain.setValueAtTime(0, now)
-    gain.gain.linearRampToValueAtTime(volume, now + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
-
-    osc.connect(gain).connect(ctx.destination)
-    osc.start(now)
-    osc.stop(now + 0.2)
   }
 }
 
