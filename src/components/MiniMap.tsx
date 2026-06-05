@@ -106,7 +106,7 @@ export function MiniMap({
     if (!ctx) return
 
     // Clear canvas
-    ctx.fillStyle = 'rgba(10, 10, 20, 0.85)'
+    ctx.fillStyle = 'rgba(7, 8, 13, 0.85)'
     ctx.fillRect(0, 0, size, size)
 
     // Draw border
@@ -141,7 +141,7 @@ export function MiniMap({
     const halfSize = (viewportSize / (bounds.maxX - bounds.minX)) * size / 2
     const rectSize = Math.min(halfSize * 2, size * 0.8)
 
-    ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)'
+    ctx.strokeStyle = 'rgba(232, 236, 244, 0.85)'
     ctx.lineWidth = 2
     ctx.strokeRect(
       viewCenter.x - rectSize / 2,
@@ -153,7 +153,7 @@ export function MiniMap({
     // Draw camera center dot
     ctx.beginPath()
     ctx.arc(viewCenter.x, viewCenter.y, 3, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(59, 130, 246, 1)'
+    ctx.fillStyle = 'rgba(232, 236, 244, 1)'
     ctx.fill()
 
   }, [nodes, selectedNode, cameraPosition, cameraZoom, bounds, size, visible, worldToCanvas])
@@ -176,7 +176,7 @@ export function MiniMap({
   return (
     <div
       ref={containerRef}
-      className="absolute bottom-4 left-4 z-40 rounded-lg overflow-hidden shadow-xl"
+      className="absolute bottom-4 left-4 z-40 rounded-lg overflow-hidden shadow-elev-2"
       style={{
         width: size,
         height: size,

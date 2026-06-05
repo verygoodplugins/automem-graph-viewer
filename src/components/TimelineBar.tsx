@@ -149,12 +149,12 @@ export function TimelineBar({
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
         <button
           onClick={onToggleActive}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800/90 backdrop-blur-sm border border-slate-700/50 rounded-full shadow-lg hover:bg-slate-700/90 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-surface-1 backdrop-blur-sm border border-hairline rounded-full shadow-elev-1 hover:bg-surface-2 transition-colors"
         >
-          <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span className="text-sm text-slate-200">Time Travel</span>
+          <span className="text-sm text-ink-2">Time Travel</span>
         </button>
       </div>
     )
@@ -164,13 +164,13 @@ export function TimelineBar({
     <div className="absolute bottom-0 left-0 right-0 z-40 p-4 pb-6 pointer-events-none">
       <div className="max-w-4xl mx-auto pointer-events-auto">
         {/* Main timeline bar */}
-        <div className="bg-slate-800/95 backdrop-blur-sm border border-slate-700/50 rounded-xl shadow-xl overflow-hidden">
+        <div className="bg-surface-1 backdrop-blur-sm border border-hairline rounded-lg shadow-elev-2 overflow-hidden">
           {/* Date and count display */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700/50">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-hairline">
             <div className="flex items-center gap-3">
               <button
                 onClick={onToggleActive}
-                className="p-1.5 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors"
+                className="p-1.5 rounded-lg hover:bg-white/5 text-ink-3 hover:text-ink transition-colors"
                 title="Exit time travel"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -178,24 +178,24 @@ export function TimelineBar({
                 </svg>
               </button>
               <div className="flex items-center gap-2">
-                <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="text-xs text-slate-400 uppercase tracking-wider">Time Travel</span>
+                <span className="text-xs text-ink-3 uppercase tracking-wider">Time Travel</span>
               </div>
             </div>
 
             {/* Current date - large and prominent */}
             <div className="flex items-center gap-4">
-              <span className="text-2xl font-bold text-white tracking-tight">
+              <span className="font-display text-2xl font-semibold text-ink tracking-tight">
                 {formatDate(currentTime)}
               </span>
             </div>
 
             {/* Memory count */}
             <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold text-white">{visibleCount}</span>
-              <span className="text-sm text-slate-400">/ {totalCount} memories</span>
+              <span className="font-mono text-lg font-semibold text-ink">{visibleCount}</span>
+              <span className="text-sm text-ink-3">/ {totalCount} memories</span>
             </div>
           </div>
 
@@ -203,7 +203,7 @@ export function TimelineBar({
           <div className="px-4 py-3">
             <div
               ref={trackRef}
-              className="relative h-3 bg-slate-700/50 rounded-full cursor-pointer"
+              className="relative h-3 bg-white/10 rounded-full cursor-pointer"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -211,34 +211,34 @@ export function TimelineBar({
             >
               {/* Progress fill */}
               <div
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-600 to-blue-500 rounded-full"
+                className="absolute inset-y-0 left-0 bg-accent rounded-full"
                 style={{ width: `${progress * 100}%` }}
               />
 
               {/* Playhead */}
               <div
-                className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg border-2 border-purple-500 transition-transform ${
+                className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg border border-void/40 transition-transform ${
                   isDragging ? 'scale-125' : 'hover:scale-110'
                 }`}
                 style={{ left: `calc(${progress * 100}% - 10px)` }}
               />
 
               {/* Start/End labels */}
-              <div className="absolute -bottom-5 left-0 text-xs text-slate-500">
+              <div className="absolute -bottom-5 left-0 text-xs font-mono text-ink-4">
                 {formatDate(minTime)}
               </div>
-              <div className="absolute -bottom-5 right-0 text-xs text-slate-500">
+              <div className="absolute -bottom-5 right-0 text-xs font-mono text-ink-4">
                 {formatDate(maxTime)}
               </div>
             </div>
           </div>
 
           {/* Playback controls */}
-          <div className="flex items-center justify-center gap-2 px-4 py-2 pt-4 border-t border-slate-700/50">
+          <div className="flex items-center justify-center gap-2 px-4 py-2 pt-4 border-t border-hairline">
             {/* Go to start */}
             <button
               onClick={onGoToStart}
-              className="p-2 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-lg hover:bg-white/5 text-ink-3 hover:text-ink transition-colors"
               title="Go to start (Shift+Left)"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -249,7 +249,7 @@ export function TimelineBar({
             {/* Step backward */}
             <button
               onClick={onStepBackward}
-              className="p-2 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-lg hover:bg-white/5 text-ink-3 hover:text-ink transition-colors"
               title="Step backward (Left arrow)"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -262,8 +262,8 @@ export function TimelineBar({
               onClick={onTogglePlay}
               className={`p-3 rounded-full transition-all ${
                 isPlaying
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/30'
-                  : 'bg-slate-700 hover:bg-slate-600 text-white'
+                  ? 'bg-accent text-void shadow-elev-focus'
+                  : 'bg-surface-2 hover:bg-surface-3 text-ink'
               }`}
               title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
             >
@@ -281,7 +281,7 @@ export function TimelineBar({
             {/* Step forward */}
             <button
               onClick={onStepForward}
-              className="p-2 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-lg hover:bg-white/5 text-ink-3 hover:text-ink transition-colors"
               title="Step forward (Right arrow)"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -292,7 +292,7 @@ export function TimelineBar({
             {/* Go to end */}
             <button
               onClick={onGoToEnd}
-              className="p-2 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors"
+              className="p-2 rounded-lg hover:bg-white/5 text-ink-3 hover:text-ink transition-colors"
               title="Go to end (Shift+Right)"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -301,10 +301,10 @@ export function TimelineBar({
             </button>
 
             {/* Speed control */}
-            <div className="ml-4 border-l border-slate-700/50 pl-4">
+            <div className="ml-4 border-l border-hairline pl-4">
               <button
                 onClick={onCycleSpeed}
-                className="px-3 py-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 text-sm font-medium text-white transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-mono font-medium text-ink transition-colors"
                 title="Cycle playback speed"
               >
                 {playbackSpeed}x
