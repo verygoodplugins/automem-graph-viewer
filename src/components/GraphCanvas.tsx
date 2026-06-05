@@ -201,7 +201,7 @@ export function GraphCanvas({
   const [cameraState, setCameraState] = useState({
     x: 0,
     y: 0,
-    z: 150,
+    z: 320,
     zoom: 1,
   });
   const [layoutNodesForMiniMap, setLayoutNodesForMiniMap] = useState<
@@ -285,7 +285,7 @@ export function GraphCanvas({
       className={`relative w-full h-full transition-shadow duration-300 ${bimanualActive ? "ring-2 ring-inset ring-purple-500/50 shadow-[inset_0_0_30px_rgba(168,85,247,0.15)]" : ""}`}
     >
       <Canvas
-        camera={{ position: [0, 0, 150], fov: 60 }}
+        camera={{ position: [0, 0, 320], fov: 60, near: 0.1, far: 10000 }}
         gl={{
           antialias: !performanceMode,
           alpha: true,
@@ -792,7 +792,7 @@ function Scene({
 
   // MiniMap: Track camera state and update periodically
   const lastCameraUpdateRef = useRef(0);
-  const lastCameraPosRef = useRef({ x: 0, y: 0, z: 150 });
+  const lastCameraPosRef = useRef({ x: 0, y: 0, z: 320 });
   useFrame(() => {
     if (!onCameraStateChange) return;
 
@@ -1223,7 +1223,7 @@ function Scene({
         autoRotateSpeed={0.5}
         onStart={handleInteractionStart}
         minDistance={20}
-        maxDistance={500}
+        maxDistance={2500}
       />
 
       {/* Graph content */}

@@ -254,7 +254,7 @@ export default function App() {
   const [filters, setFilters] = useState<FilterState>({
     types: [],
     importanceRange: [0.3, 1],
-    maxNodes: 500,
+    maxNodes: 2000,
   })
   const [hasSetDefaultImportance, setHasSetDefaultImportance] = useState(false)
 
