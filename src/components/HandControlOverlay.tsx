@@ -36,20 +36,20 @@ export function HandControlOverlay({
         : { text: 'LOCKED', color: 'bg-cyan-500/20 text-cyan-200 border-cyan-400/30' }
       : lock.mode === 'candidate'
         ? { text: `ACQUIRING (${lock.frames})`, color: 'bg-yellow-500/20 text-yellow-200 border-yellow-400/30' }
-        : { text: 'IDLE', color: 'bg-slate-500/20 text-slate-200 border-slate-400/30' }
+        : { text: 'IDLE', color: 'bg-white/10 text-ink-2 border-white/15' }
 
   const m = lock.mode === 'idle' ? lock.metrics : lock.metrics
 
   return (
     <div className="absolute left-4 bottom-4 z-50 pointer-events-auto">
-      <div className="glass border border-white/10 rounded-xl px-4 py-3 text-xs text-slate-200 space-y-2 w-[280px]">
+      <div className="glass border border-white/10 rounded-xl px-4 py-3 text-xs text-ink-2 space-y-2 w-[280px]">
         <div className="flex items-center justify-between">
-          <span className="text-slate-400">Hand Control</span>
+          <span className="text-ink-3">Hand Control</span>
           <div className="flex items-center gap-2">
             {onResetView && (
               <button
                 onClick={onResetView}
-                className="px-2 py-1 rounded-md text-[10px] bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 hover:text-white transition-all border border-slate-500/30"
+                className="px-2 py-1 rounded-md text-[10px] bg-white/5 text-ink-2 hover:bg-white/10 hover:text-ink transition-all border border-hairline"
                 title="Reset view to center"
               >
                 Reset View
@@ -61,14 +61,14 @@ export function HandControlOverlay({
 
         {/* Source Toggle */}
         <div className="flex items-center justify-between">
-          <span className="text-slate-400">Source</span>
-          <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg p-0.5">
+          <span className="text-ink-3">Source</span>
+          <div className="flex items-center gap-1 bg-black/20 rounded-lg p-0.5">
             <button
               onClick={() => onSourceChange?.('mediapipe')}
               className={`px-2 py-1 rounded-md text-[10px] transition-all ${
                 source === 'mediapipe'
-                  ? 'bg-blue-500/30 text-blue-200 border border-blue-400/30'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-accent text-void'
+                  : 'text-ink-3 hover:text-ink-2'
               }`}
             >
               Webcam
@@ -77,8 +77,8 @@ export function HandControlOverlay({
               onClick={() => onSourceChange?.('iphone')}
               className={`px-2 py-1 rounded-md text-[10px] transition-all ${
                 source === 'iphone'
-                  ? 'bg-purple-500/30 text-purple-200 border border-purple-400/30'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-accent text-void'
+                  : 'text-ink-3 hover:text-ink-2'
               }`}
             >
               iPhone
@@ -89,32 +89,32 @@ export function HandControlOverlay({
         {source === 'iphone' && (
           <>
             <div className="flex items-center justify-between">
-              <span className="text-slate-400">Browser → Bridge</span>
-              <span className={iphoneConnected ? 'text-emerald-200' : 'text-red-300'}>
+              <span className="text-ink-3">Browser → Bridge</span>
+              <span className={iphoneConnected ? 'text-ok' : 'text-danger'}>
                 {iphoneConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-400">Phone → Bridge</span>
-              <span className={phoneConnected ? 'text-emerald-200' : 'text-red-300'}>
+              <span className="text-ink-3">Phone → Bridge</span>
+              <span className={phoneConnected ? 'text-ok' : 'text-danger'}>
                 {phoneConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-400">LiDAR</span>
-              <span className={hasLiDAR ? 'text-emerald-200' : 'text-slate-400'}>
+              <span className="text-ink-3">LiDAR</span>
+              <span className={hasLiDAR ? 'text-ok' : 'text-ink-3'}>
                 {hasLiDAR ? '✓ depth frames' : '✗ no depth'}
               </span>
             </div>
             {iphoneUrl && (
-              <div className="text-[10px] text-slate-400 truncate">
-                ws: <span className="text-slate-300">{iphoneUrl}</span>
+              <div className="text-[10px] text-ink-3 truncate">
+                ws: <span className="text-ink-2">{iphoneUrl}</span>
               </div>
             )}
             {!phoneConnected && bridgeIps.length > 0 && phonePort && (
-              <div className="text-[10px] text-slate-400">
+              <div className="text-[10px] text-ink-3">
                 iPhone app URL:{' '}
-                <span className="text-slate-200">
+                <span className="text-ink-2">
                   ws://{bridgeIps[0]}:{phonePort}
                 </span>
               </div>
@@ -125,41 +125,41 @@ export function HandControlOverlay({
         {m && (
           <div className="grid grid-cols-2 gap-x-3 gap-y-1">
             <div className="flex justify-between">
-              <span className="text-slate-400">spread</span>
+              <span className="text-ink-3">spread</span>
               <span>{m.spread.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">palm</span>
+              <span className="text-ink-3">palm</span>
               <span>{m.palmFacing.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">point</span>
+              <span className="text-ink-3">point</span>
               <span>{m.point.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">pinch</span>
+              <span className="text-ink-3">pinch</span>
               <span>{m.pinch.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">grab</span>
+              <span className="text-ink-3">grab</span>
               <span>{m.grab.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">depth</span>
+              <span className="text-ink-3">depth</span>
               <span>{m.depth.toFixed(3)}</span>
             </div>
           </div>
         )}
 
-        <div className="pt-1 text-[11px] text-slate-400 leading-snug">
+        <div className="pt-1 text-[11px] text-ink-3 leading-snug">
           <div>
-            <span className="text-slate-300">Acquire:</span> raise open palm + spread fingers
+            <span className="text-ink-2">Acquire:</span> raise open palm + spread fingers
           </div>
           <div>
-            <span className="text-slate-300">Navigate:</span> pinch with both hands to pan/zoom/rotate the world
+            <span className="text-ink-2">Navigate:</span> pinch with both hands to pan/zoom/rotate the world
           </div>
           <div>
-            <span className="text-slate-300">Select:</span> point (index out) + pinch thumb/index to click
+            <span className="text-ink-2">Select:</span> point (index out) + pinch thumb/index to click
           </div>
         </div>
       </div>
