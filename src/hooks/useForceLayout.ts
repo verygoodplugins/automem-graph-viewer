@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   forceSimulation,
   forceLink,
@@ -151,15 +151,23 @@ function computeLayout(
     .alphaDecay(0.02)
     .velocityDecay(0.3)
 
-  // Store simulation reference in cache for reheat
+  // Store simulation reference in cache for reheat / async settling
   layoutCache.simulation = simulation
 
-  // Run simulation synchronously for initial layout
-  const INITIAL_TICKS = 120
+  // Warm up just enough that frame 0 isn't a raw seed sphere, then stop the
+  // internal d3 timer. Settling is driven afterwards by runSimulationAsync,
+  // which ticks a few times per animation frame so the main thread never
+  // blocks (the old 120-tick synchronous loop froze the tab around 2k nodes).
+  // On expansion (append) existing nodes keep their positions and new nodes are
+  // seeded near their parents, so we skip the warmup to avoid jostling the
+  // graph before the gentle settle.
+  const isAppend = existingNodes.length > 0 && simNodes.length > existingNodes.length
+  const warmupTicks = isAppend ? 0 : 8
   simulation.alpha(1)
-  for (let i = 0; i < INITIAL_TICKS; i++) {
+  for (let i = 0; i < warmupTicks; i++) {
     simulation.tick()
   }
+  simulation.stop()
 
   return simNodes
 }
@@ -172,8 +180,15 @@ export function useForceLayout({
   const [isSimulating, setIsSimulating] = useState(false)
   const [layoutTick, setLayoutTick] = useState(0)
 
-  // Use useMemo to compute layout synchronously, with module-level caching
-  // This approach is immune to React Strict Mode double-invocation
+  // Handle to the in-flight rAF settling loop so we can cancel it on cleanup or
+  // when a newer layout supersedes it.
+  const rafRef = useRef<number | null>(null)
+  // Previous node count — lets the settle effect tell a fresh layout (full
+  // settle from alpha 1.0) from an append/expansion (gentle settle from ~0.3).
+  const prevNodeCountRef = useRef(0)
+
+  // Compute layout synchronously (construction + tiny warmup only), with
+  // module-level caching. Immune to React Strict Mode double-invocation.
   const layoutNodes = useMemo(() => {
     if (nodes.length === 0) {
       layoutCache.signature = ''
@@ -198,26 +213,77 @@ export function useForceLayout({
     return computed
   }, [nodes, edges, forceConfig])
 
-  // Reheat function uses module-level cache
-  const reheat = useCallback(() => {
-    if (layoutCache.simulation) {
-      layoutCache.simulation.alpha(0.5).restart()
-      setIsSimulating(true)
+  // Drive the simulation asynchronously: a few ticks per animation frame,
+  // bumping layoutTick each frame so consumers (usePositionInterpolation)
+  // re-sync the mutated node positions. Generalizes the old reheat poll into a
+  // reusable settler parameterized by a starting alpha. The internal d3 timer
+  // is stopped (in computeLayout) so ticking happens only here — never on the
+  // main thread in a blocking loop, and never double-ticked.
+  const runSimulationAsync = useCallback((targetAlpha: number) => {
+    const sim = layoutCache.simulation
+    if (!sim) return
 
-      // Poll the simulation and bump layoutTick so consumers re-sync positions
-      const poll = () => {
-        if (!layoutCache.simulation) return
-        const alpha = layoutCache.simulation.alpha()
-        setLayoutTick(t => t + 1)
-        if (alpha > 0.01) {
-          requestAnimationFrame(poll)
-        } else {
-          setIsSimulating(false)
-        }
-      }
-      requestAnimationFrame(poll)
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
     }
+
+    sim.alpha(targetAlpha)
+    setIsSimulating(true)
+
+    const step = () => {
+      // A newer computeLayout replaced (and stopped) this simulation — bail so
+      // overlapping loops never mutate the shared layoutCache concurrently
+      // (matters under React Strict Mode's double-invoked effects).
+      if (layoutCache.simulation !== sim) {
+        rafRef.current = null
+        setIsSimulating(false)
+        return
+      }
+
+      sim.tick()
+      sim.tick()
+      sim.tick()
+      setLayoutTick((t) => t + 1)
+
+      if (sim.alpha() > 0.01) {
+        rafRef.current = requestAnimationFrame(step)
+      } else {
+        rafRef.current = null
+        setIsSimulating(false)
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(step)
   }, [])
+
+  // Kick off settling whenever a new layout is built. Fresh layouts settle from
+  // alpha 1.0; appends (node count grew) settle gently from ~0.3 so existing
+  // nodes barely move while newly-merged neighbors find their place.
+  useEffect(() => {
+    if (layoutNodes.length === 0) {
+      prevNodeCountRef.current = 0
+      return
+    }
+
+    const prev = prevNodeCountRef.current
+    const isAppend = prev > 0 && layoutNodes.length > prev
+    prevNodeCountRef.current = layoutNodes.length
+
+    runSimulationAsync(isAppend ? 0.3 : 1.0)
+
+    return () => {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
+  }, [layoutNodes, runSimulationAsync])
+
+  // Reheat re-energizes the current simulation at a moderate alpha.
+  const reheat = useCallback(() => {
+    runSimulationAsync(0.5)
+  }, [runSimulationAsync])
 
   return { nodes: layoutNodes, isSimulating, reheat, layoutTick }
 }
