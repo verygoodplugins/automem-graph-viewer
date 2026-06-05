@@ -669,36 +669,34 @@ export default function App() {
         <button
           onClick={() => setPerformanceMode(!performanceMode)}
           className={`
-            flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+            inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
             ${performanceMode
               ? 'bg-surface-2 text-accent shadow-elev-focus'
               : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
             }
           `}
-          title={performanceMode ? 'Disable performance mode (enable effects)' : 'Enable performance mode (disable bloom/vignette for faster rendering)'}
+          title={performanceMode ? 'Performance mode ON — click to enable effects' : 'Performance mode — disable bloom/vignette for faster rendering'}
+          aria-label="Toggle performance mode"
+          aria-pressed={performanceMode}
         >
           <BoltIcon className="w-5 h-5" />
-          <span className="text-sm font-medium hidden sm:inline">
-            {performanceMode ? 'Perf ON' : 'Perf'}
-          </span>
         </button>
 
         {/* Gesture controls */}
         <button
           onClick={() => setGestureControlEnabled(!gestureControlEnabled)}
             className={`
-              flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+              inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
               ${gestureControlEnabled
                 ? 'bg-surface-2 text-accent shadow-elev-focus'
                 : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
               }
             `}
-            title={gestureControlEnabled ? 'Disable hand gestures' : 'Enable hand gestures (requires camera)'}
+            title={gestureControlEnabled ? 'Hand gestures ON — click to disable' : 'Enable hand gestures (requires camera)'}
+            aria-label="Toggle hand gestures"
+            aria-pressed={gestureControlEnabled}
           >
             <HandIcon className="w-5 h-5" />
-            <span className="text-sm font-medium hidden sm:inline">
-              {gestureControlEnabled ? 'Gestures ON' : 'Gestures'}
-            </span>
         </button>
 
         {/* Debug Overlay Toggle (only show when gestures are enabled) */}
@@ -706,18 +704,17 @@ export default function App() {
           <button
             onClick={() => setDebugOverlayVisible(!debugOverlayVisible)}
             className={`
-              flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+              inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
               ${debugOverlayVisible
                 ? 'bg-surface-2 text-accent shadow-elev-focus'
                 : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
               }
             `}
-            title={debugOverlayVisible ? 'Hide debug overlay' : 'Show gesture debug overlay'}
+            title={debugOverlayVisible ? 'Hide gesture debug overlay' : 'Show gesture debug overlay'}
+            aria-label="Toggle gesture debug overlay"
+            aria-pressed={debugOverlayVisible}
           >
             <BugIcon className="w-5 h-5" />
-            <span className="text-sm font-medium hidden sm:inline">
-              {debugOverlayVisible ? 'Debug ON' : 'Debug'}
-            </span>
           </button>
         )}
 
@@ -748,32 +745,33 @@ export default function App() {
           </div>
         )}
 
+        {/* Divider — separates interaction/dev toggles from utility actions */}
+        <div className="w-px h-5 bg-hairline flex-shrink-0" aria-hidden="true" />
+
         <button
           onClick={() => setShortcutsHelpOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink transition-all duration-200"
+          className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink transition-all duration-200"
           title="Keyboard shortcuts (?)"
           aria-label="Open keyboard shortcuts help"
         >
           <Keyboard className="w-5 h-5" />
-          <span className="text-sm font-medium hidden xl:inline">Shortcuts</span>
         </button>
 
         {/* Settings Panel Toggle */}
         <button
           onClick={() => setSettingsPanelOpen(!settingsPanelOpen)}
           className={`
-            flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+            inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
             ${settingsPanelOpen
               ? 'bg-surface-2 text-accent shadow-elev-focus'
               : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
             }
           `}
           title={settingsPanelOpen ? 'Hide settings' : 'Show graph settings'}
+          aria-label="Toggle settings panel"
+          aria-pressed={settingsPanelOpen}
         >
           <Settings className="w-5 h-5" />
-          <span className="text-sm font-medium hidden sm:inline">
-            Settings
-          </span>
         </button>
       </header>
 
