@@ -790,8 +790,8 @@ export default function App() {
               {isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                   <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                    <span className="text-slate-400">Loading memories...</span>
+                    <div className="w-12 h-12 border-4 border-white/10 border-t-accent rounded-full animate-spin" />
+                    <span className="text-ink-3">Loading memories...</span>
                   </div>
                 </div>
               )}
@@ -799,11 +799,11 @@ export default function App() {
               {error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                   <div className="glass p-6 rounded-xl max-w-md text-center">
-                    <div className="text-red-400 text-lg mb-2">Connection Error</div>
-                    <div className="text-slate-400 text-sm mb-4">{(error as Error).message}</div>
+                    <div className="text-danger text-lg mb-2">Connection Error</div>
+                    <div className="text-ink-3 text-sm mb-4">{(error as Error).message}</div>
                     <button
                       onClick={() => refetch()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg transition-colors"
                     >
                       Retry
                     </button>
@@ -912,7 +912,7 @@ export default function App() {
           </Panel>
 
           {/* Resize Handle */}
-          <PanelResizeHandle className={`w-1 bg-white/5 hover:bg-blue-500/50 transition-colors cursor-col-resize ${!isInspectorOpen ? 'opacity-0 pointer-events-none' : ''}`} />
+          <PanelResizeHandle className={`w-1 bg-white/5 hover:bg-white/20 transition-colors cursor-col-resize ${!isInspectorOpen ? 'opacity-0 pointer-events-none' : ''}`} />
 
           {/* Inspector Panel */}
           <Panel
@@ -995,7 +995,7 @@ export default function App() {
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className="fixed bottom-5 right-5 z-[95] rounded-lg border border-blue-400/20 bg-slate-900/95 px-3 py-2 text-sm text-slate-100 shadow-xl"
+          className="fixed bottom-5 right-5 z-[95] rounded-lg border border-hairline bg-surface-1 px-3 py-2 text-sm text-ink shadow-xl"
         >
           {statusMessage}
         </div>
