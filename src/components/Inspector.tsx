@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
-import { X, Clock, Tag, ArrowRight, Sparkles, Edit2, Save, Trash2, Route, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Clock, Tag, ArrowRight, Sparkles, Edit2, Save, Trash2, Route, Plus, ChevronDown, ChevronUp, Network, Check } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGraphNeighbors } from '@/hooks/useGraphData'
 import { updateMemory, deleteMemory } from '@/api/client'
 import { RelationshipBadge, type Direction } from '@/components/RelationshipBadge'
 import { EDGE_STYLES, CATEGORY_COLORS } from '@/lib/edgeStyles'
+import type { ExpandPayload } from '@/hooks/useExpandableGraph'
 import type { GraphNode, RelationType, RelationshipVisibility } from '@/lib/types'
 
 interface InspectorProps {
@@ -16,6 +17,10 @@ interface InspectorProps {
   onTagClick?: (tag: string) => void
   onRelationshipTypeClick?: (type: RelationType) => void
   relationshipVisibility?: RelationshipVisibility
+  /** Merge this node's fetched neighbors into the live graph. */
+  onExpand?: (payload: ExpandPayload) => void
+  /** Ids currently rendered, so we can show "Expanded" when nothing is new. */
+  existingNodeIds?: Set<string>
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -37,6 +42,8 @@ export function Inspector({
   onTagClick,
   onRelationshipTypeClick,
   relationshipVisibility,
+  onExpand,
+  existingNodeIds,
 }: InspectorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedImportance, setEditedImportance] = useState(0)
@@ -138,6 +145,18 @@ export function Inspector({
     }
   }
 
+  const handleExpandIntoGraph = () => {
+    if (!node || !neighbors || !onExpand) return
+    // Include the center so its edges never dangle and it always renders, even
+    // when expanding a node reached by navigation that isn't in the graph yet.
+    // Dedupe in the reducer makes this a no-op when the center is already present.
+    onExpand({
+      centerId: node.id,
+      nodes: [neighbors.center, ...neighbors.graph_neighbors, ...neighbors.semantic_neighbors],
+      edges: neighbors.edges,
+    })
+  }
+
   // Unique edge types present in this node's relationships (for filter strip)
   const uniqueEdgeTypes = useMemo(() => {
     if (!groupedNeighbors) return []
@@ -151,6 +170,24 @@ export function Inspector({
   }, [groupedNeighbors])
 
   const totalNeighborCount = neighbors?.graph_neighbors.length ?? 0
+
+  // All fetched neighbor ids (graph + semantic) — the set that "Expand into graph"
+  // would merge. Drives both the merge payload and the "already expanded" state.
+  const neighborIds = useMemo(() => {
+    if (!neighbors) return [] as string[]
+    return [
+      ...neighbors.graph_neighbors.map((n) => n.id),
+      ...neighbors.semantic_neighbors.map((n) => n.id),
+    ]
+  }, [neighbors])
+
+  // "Expanded" (button disabled) only when clicking would add nothing new — i.e.
+  // the center itself and every neighbor are already on screen.
+  const allExpanded = useMemo(() => {
+    if (!node || neighborIds.length === 0 || !existingNodeIds) return false
+    if (!existingNodeIds.has(node.id)) return false
+    return neighborIds.every((id) => existingNodeIds.has(id))
+  }, [node, neighborIds, existingNodeIds])
 
   // Pre-compute visible neighbor groups respecting the limit
   const visibleGroups = useMemo(() => {
@@ -479,6 +516,31 @@ export function Inspector({
 
       {/* Footer Actions */}
       <div className="flex-shrink-0 p-4 border-t border-white/5 space-y-2">
+        {/* Expand into graph — merge this node's neighbors into the live graph */}
+        {onExpand && neighborIds.length > 0 && (
+          <button
+            onClick={handleExpandIntoGraph}
+            disabled={allExpanded}
+            className={`w-full flex items-center justify-center gap-2 py-2 text-sm rounded-lg transition-colors ${
+              allExpanded
+                ? 'text-slate-500 bg-white/5 cursor-default'
+                : 'text-violet-300 hover:text-violet-200 hover:bg-violet-500/10'
+            }`}
+          >
+            {allExpanded ? (
+              <>
+                <Check className="w-4 h-4" />
+                Expanded
+              </>
+            ) : (
+              <>
+                <Network className="w-4 h-4" />
+                Expand into graph ({neighborIds.length})
+              </>
+            )}
+          </button>
+        )}
+
         {/* Find Path Button */}
         {onStartPathfinding && (
           <button

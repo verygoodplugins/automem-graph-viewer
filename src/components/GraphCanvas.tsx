@@ -128,6 +128,8 @@ interface GraphCanvasProps {
   clusterConfig?: ClusterConfig;
   relationshipVisibility?: RelationshipVisibility;
   typeColors?: Record<string, string>;
+  // Expansion: seed newly-merged nodes next to the node the user expanded from.
+  expansionAnchors?: Map<string, string>;
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
   // Bookmarks: expose camera state and navigation to parent
@@ -180,6 +182,7 @@ export function GraphCanvas({
   clusterConfig = DEFAULT_CLUSTER_CONFIG,
   relationshipVisibility = DEFAULT_RELATIONSHIP_VISIBILITY,
   typeColors = {},
+  expansionAnchors,
   onReheatReady,
   onResetViewReady,
   onCameraStateForBookmarks,
@@ -313,6 +316,7 @@ export function GraphCanvas({
           clusterConfig={clusterConfig}
           relationshipVisibility={relationshipVisibility}
           typeColors={typeColors}
+          expansionAnchors={expansionAnchors}
           onReheatReady={onReheatReady}
           onResetViewReady={onResetViewReady}
           onCameraStateChange={setCameraState}
@@ -406,6 +410,7 @@ function Scene({
   clusterConfig = DEFAULT_CLUSTER_CONFIG,
   relationshipVisibility = DEFAULT_RELATIONSHIP_VISIBILITY,
   typeColors = {},
+  expansionAnchors,
   onReheatReady,
   onResetViewReady,
   onCameraStateChange,
@@ -431,7 +436,7 @@ function Scene({
     isSimulating,
     reheat,
     layoutTick,
-  } = useForceLayout({ nodes, edges, forceConfig });
+  } = useForceLayout({ nodes, edges, forceConfig, expansionAnchors });
 
   // Depth-based selection dimming: auto-spotlight when a node is selected
   const focusStates = useMemo(() => {

@@ -3,6 +3,7 @@ import { Keyboard, Settings } from 'lucide-react'
 
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useGraphSnapshot } from './hooks/useGraphData'
+import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
@@ -319,9 +320,17 @@ export default function App() {
     enabled: isAuthenticated,
   })
 
-  // Stable data references - use EMPTY constants when data not loaded
-  const rawNodes = data?.nodes ?? EMPTY_NODES
-  const edges = data?.edges ?? EMPTY_EDGES
+  // The live, growing graph: seeded/reset from the immutable snapshot, grown by
+  // expanding a node's neighborhood. This is the source of truth for what renders.
+  const graph = useExpandableGraph(data)
+
+  // Stable data references. Once the snapshot has seeded the expandable graph,
+  // read from it (so expansions are visible); fall back to the raw snapshot for
+  // the one render between data arriving and the reset effect firing (identical
+  // ids/order → no realloc, seamless handoff), and to EMPTY constants before load.
+  const hasGraph = graph.nodes.length > 0
+  const rawNodes = hasGraph ? graph.nodes : (data?.nodes ?? EMPTY_NODES)
+  const edges = hasGraph ? graph.edges : (data?.edges ?? EMPTY_EDGES)
 
   // Apply archive threshold default on first successful load
   useEffect(() => {
@@ -990,6 +999,7 @@ export default function App() {
                 clusterConfig={clusterConfig}
                 relationshipVisibility={relationshipVisibility}
                 typeColors={data?.meta?.type_colors}
+                expansionAnchors={graph.expansionAnchors}
                 onReheatReady={setReheatFn}
                 onResetViewReady={setResetViewFn}
                 onCameraStateForBookmarks={setCameraStateForBookmarks}
@@ -1126,6 +1136,8 @@ export default function App() {
               onTagClick={handleInspectorTagClick}
               onRelationshipTypeClick={handleRelationshipTypeClick}
               relationshipVisibility={relationshipVisibility}
+              onExpand={graph.expand}
+              existingNodeIds={visibleNodeIds}
             />
           </Panel>
         </PanelGroup>
