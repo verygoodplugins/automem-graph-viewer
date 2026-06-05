@@ -15,10 +15,8 @@ import { GestureDebugOverlay } from './components/GestureDebugOverlay'
 import { Hand2DOverlay } from './components/Hand2DOverlay'
 import { HandControlOverlay } from './components/HandControlOverlay'
 import { SettingsPanel } from './components/settings'
-import { BookmarksPanel } from './components/BookmarksPanel'
 import { PathfindingOverlay } from './components/PathfindingOverlay'
 import { TimelineBar } from './components/TimelineBar'
-import { RadialMenu } from './components/RadialMenu'
 import { TagCloud } from './components/TagCloud'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
 import { useHandLockAndGrab } from './hooks/useHandLockAndGrab'
@@ -28,7 +26,6 @@ import { useTagCloud } from './hooks/useTagCloud'
 import { useFilterChips } from './hooks/useFilterChips'
 import { useBreadcrumbs } from './hooks/useBreadcrumbs'
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
-import { useBookmarks, type Bookmark } from './hooks/useBookmarks'
 import { usePathfinding } from './hooks/usePathfinding'
 import { useTimeTravel } from './hooks/useTimeTravel'
 import { useSoundEffects } from './hooks/useSoundEffects'
@@ -133,17 +130,6 @@ export default function App() {
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const statusTimeoutRef = useRef<number | null>(null)
-
-  // Radial menu state
-  const [radialMenuState, setRadialMenuState] = useState<{
-    isOpen: boolean
-    node: GraphNode | null
-    position: { x: number; y: number }
-  }>({
-    isOpen: false,
-    node: null,
-    position: { x: 0, y: 0 },
-  })
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
 
@@ -266,17 +252,8 @@ export default function App() {
   // Reset view callback - will be set by GraphCanvas
   const [resetViewFn, setResetViewFn] = useState<(() => void) | null>(null)
 
-  // Bookmarks
-  const {
-    bookmarks,
-    addBookmark,
-    updateBookmark,
-    deleteBookmark,
-    getBookmarkByIndex,
-  } = useBookmarks()
-
-  // Camera state and navigation for bookmarks
-  const [cameraStateForBookmarks, setCameraStateForBookmarks] = useState({ x: 0, y: 0, z: 150, zoom: 1 })
+  // Imperative camera-navigation handle, populated by GraphCanvas. Used by the
+  // inspector "navigate" action, breadcrumb jumps, and the select-to-focus effect.
   const navigateForBookmarksRef = useRef<((x: number, y: number, z?: number) => void) | null>(null)
   const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
@@ -468,41 +445,6 @@ export default function App() {
     }, 1800)
   }, [])
 
-  // Bookmark handlers (must be after data is defined)
-  const handleSaveBookmark = useCallback(() => {
-    addBookmark(
-      { x: cameraStateForBookmarks.x, y: cameraStateForBookmarks.y, z: cameraStateForBookmarks.z },
-      cameraStateForBookmarks.zoom,
-      selectedNode?.id
-    )
-    sound.playBookmark()
-    showStatus('Bookmark saved')
-  }, [addBookmark, cameraStateForBookmarks, selectedNode, sound.playBookmark, showStatus])
-
-  const handleNavigateToBookmark = useCallback((bookmark: Bookmark) => {
-    navigateForBookmarksRef.current?.(bookmark.position.x, bookmark.position.y)
-    // If bookmark has a selected node, select it
-    if (bookmark.selectedNodeId && nodes.length > 0) {
-      const node = nodes.find(n => n.id === bookmark.selectedNodeId)
-      if (node) {
-        setSelectedNode(node)
-      }
-    }
-    showStatus(`Jumped to ${bookmark.name}`)
-  }, [nodes, showStatus])
-
-  const handleRenameBookmark = useCallback((id: string, name: string) => {
-    updateBookmark(id, { name })
-  }, [updateBookmark])
-
-  // Quick navigate to bookmark by number (1-9)
-  const handleQuickNavigate = useCallback((index: number) => {
-    const bookmark = getBookmarkByIndex(index)
-    if (bookmark) {
-      handleNavigateToBookmark(bookmark)
-    }
-  }, [getBookmarkByIndex, handleNavigateToBookmark])
-
   const { push: breadcrumbPush } = breadcrumbs
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
     // If we're in path selection mode and a node is clicked, complete the path
@@ -536,33 +478,6 @@ export default function App() {
     }
     setHoveredNode(node)
   }, [sound.playHover])
-
-  // Radial menu handlers
-  const handleNodeContextMenu = useCallback((node: GraphNode, screenPosition: { x: number; y: number }) => {
-    setRadialMenuState({
-      isOpen: true,
-      node,
-      position: screenPosition,
-    })
-    setSelectedNode(node) // Also select the node
-  }, [])
-
-  const handleCloseRadialMenu = useCallback(() => {
-    setRadialMenuState(prev => ({
-      ...prev,
-      isOpen: false,
-    }))
-  }, [])
-
-  const handleCopyNodeId = useCallback((_nodeId: string) => {
-    showStatus('Node ID copied to clipboard')
-  }, [showStatus])
-
-  const handleViewNodeContent = useCallback((node: GraphNode) => {
-    // Select the node to show in inspector
-    setSelectedNode(node)
-  }, [])
-
 
   const handleSearch = useCallback((term: string) => {
     // Play search sound on typing (only if term changed and is not empty)
@@ -638,8 +553,6 @@ export default function App() {
     onReheat: handleReheat,
     onToggleSettings: () => setSettingsPanelOpen(prev => !prev),
     onToggleLabels: handleToggleLabels,
-    onSaveBookmark: handleSaveBookmark,
-    onQuickNavigate: handleQuickNavigate,
     onStartPathfinding: handleStartPathfindingFromKeyboard,
     onCancelPathfinding: pathfinding.cancelPathSelection,
     onShowHelp: () => setShortcutsHelpOpen(true),
@@ -906,7 +819,6 @@ export default function App() {
                 searchTerm={searchTerm}
                 onNodeSelect={handleNodeSelect}
                 onNodeHover={handleNodeHover}
-                onNodeContextMenu={handleNodeContextMenu}
                 gestureControlEnabled={gestureControlEnabled}
                 trackingSource={trackingSource}
                 onGestureStateChange={handleGestureStateChange}
@@ -920,7 +832,6 @@ export default function App() {
                 expansionAnchors={graph.expansionAnchors}
                 onReheatReady={setReheatFn}
                 onResetViewReady={setResetViewFn}
-                onCameraStateForBookmarks={setCameraStateForBookmarks}
                 onNavigateForBookmarks={(fn) => { navigateForBookmarksRef.current = fn }}
                 pathNodeIds={pathfinding.pathNodeIds}
                 pathEdgeKeys={pathfinding.pathEdgeKeys}
@@ -959,17 +870,6 @@ export default function App() {
                 phoneConnected={trackingInfo.phoneConnected}
                 bridgeIps={trackingInfo.bridgeIps}
                 phonePort={trackingInfo.phonePort}
-              />
-
-              {/* Bookmarks Panel */}
-              <BookmarksPanel
-                bookmarks={bookmarks}
-                onNavigate={handleNavigateToBookmark}
-                onDelete={deleteBookmark}
-                onRename={handleRenameBookmark}
-                onSaveBookmark={handleSaveBookmark}
-                modifierLabel={keyboardModifierLabel}
-                visible={true}
               />
 
               {/* Pathfinding Overlay */}
@@ -1064,18 +964,6 @@ export default function App() {
           onSoundVolumeChange={sound.setMasterVolume}
         />
       </div>
-
-      {/* Radial Menu (context menu for nodes) */}
-      {radialMenuState.isOpen && radialMenuState.node && (
-        <RadialMenu
-          node={radialMenuState.node}
-          position={radialMenuState.position}
-          onClose={handleCloseRadialMenu}
-          onStartPath={pathfinding.startPathSelection}
-          onViewContent={handleViewNodeContent}
-          onCopyId={handleCopyNodeId}
-        />
-      )}
 
       {/* Tag Cloud (press 'T' to toggle) */}
       <TagCloud

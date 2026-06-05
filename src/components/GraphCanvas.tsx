@@ -106,10 +106,6 @@ interface GraphCanvasProps {
   searchTerm: string;
   onNodeSelect: (node: GraphNode | null) => void;
   onNodeHover: (node: GraphNode | null) => void;
-  onNodeContextMenu?: (
-    node: GraphNode,
-    screenPosition: { x: number; y: number },
-  ) => void;
   gestureControlEnabled?: boolean;
   trackingSource?: "mediapipe" | "iphone";
   onGestureStateChange?: (state: GestureState) => void;
@@ -132,13 +128,8 @@ interface GraphCanvasProps {
   expansionAnchors?: Map<string, string>;
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
-  // Bookmarks: expose camera state and navigation to parent
-  onCameraStateForBookmarks?: (state: {
-    x: number;
-    y: number;
-    z: number;
-    zoom: number;
-  }) => void;
+  // Expose an imperative camera-navigation handle to the parent (used by the
+  // inspector navigate action and breadcrumb jumps).
   onNavigateForBookmarks?: (
     fn: (x: number, y: number, z?: number) => void,
   ) => void;
@@ -166,7 +157,6 @@ export function GraphCanvas({
   searchTerm,
   onNodeSelect,
   onNodeHover,
-  onNodeContextMenu,
   gestureControlEnabled = false,
   trackingSource: source = "mediapipe",
   onGestureStateChange,
@@ -180,7 +170,6 @@ export function GraphCanvas({
   expansionAnchors,
   onReheatReady,
   onResetViewReady,
-  onCameraStateForBookmarks,
   onNavigateForBookmarks,
   pathNodeIds,
   pathEdgeKeys,
@@ -210,11 +199,6 @@ export function GraphCanvas({
   const handleMiniMapNavigate = useCallback((x: number, y: number) => {
     navigateToRef.current?.(x, y);
   }, []);
-
-  // Forward camera state to parent for bookmarks
-  useEffect(() => {
-    onCameraStateForBookmarks?.(cameraState);
-  }, [cameraState, onCameraStateForBookmarks]);
 
   // Callback to capture and expose navigation function
   const handleNavigateToReady = useCallback(
@@ -300,7 +284,6 @@ export function GraphCanvas({
           searchTerm={searchTerm}
           onNodeSelect={onNodeSelect}
           onNodeHover={onNodeHover}
-          onNodeContextMenu={onNodeContextMenu}
           gestureState={gestureState}
           gestureControlEnabled={gestureControlEnabled && gesturesActive}
           performanceMode={performanceMode}
@@ -345,12 +328,8 @@ export function GraphCanvas({
 
 interface SceneProps extends Omit<
   GraphCanvasProps,
-  "onGestureStateChange" | "onTrackingInfoChange" | "onNodeContextMenu"
+  "onGestureStateChange" | "onTrackingInfoChange"
 > {
-  onNodeContextMenu?: (
-    node: GraphNode,
-    screenPosition: { x: number; y: number },
-  ) => void;
   gestureState: GestureState;
   gestureControlEnabled: boolean;
   performanceMode: boolean;
@@ -387,7 +366,6 @@ function Scene({
   searchTerm,
   onNodeSelect,
   onNodeHover,
-  onNodeContextMenu,
   gestureState,
   gestureControlEnabled,
   performanceMode,
@@ -1220,7 +1198,6 @@ function Scene({
           connectedIds={connectedIds}
           onNodeSelect={onNodeSelect}
           onNodeHover={onNodeHover}
-          onNodeContextMenu={onNodeContextMenu}
           nodeSizeScale={displayConfig.nodeSizeScale}
           focusStates={focusStates}
           pathNodeIds={pathNodeIds}
@@ -1550,10 +1527,6 @@ interface InstancedNodesProps {
   connectedIds: Set<string>;
   onNodeSelect: (node: GraphNode | null) => void;
   onNodeHover: (node: GraphNode | null) => void;
-  onNodeContextMenu?: (
-    node: GraphNode,
-    screenPosition: { x: number; y: number },
-  ) => void;
   nodeSizeScale?: number;
   focusStates: Map<string, NodeFocusState>;
   pathNodeIds?: Set<string>;
@@ -1575,7 +1548,6 @@ function InstancedNodes({
   connectedIds,
   onNodeSelect,
   onNodeHover,
-  onNodeContextMenu,
   nodeSizeScale = 1.0,
   focusStates,
   pathNodeIds,
@@ -1932,42 +1904,12 @@ function InstancedNodes({
     [camera, pointer, raycaster, nodeIndexMap, onNodeHover],
   );
 
-  const handleContextMenu = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (!meshRef.current || !onNodeContextMenu) return;
-
-      // Prevent the browser's default context menu
-      event.nativeEvent.preventDefault();
-
-      raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObject(meshRef.current);
-
-      if (intersects.length > 0) {
-        const instanceId = intersects[0].instanceId;
-        if (instanceId !== undefined) {
-          const node = nodeIndexMap.get(instanceId);
-          if (node) {
-            event.stopPropagation();
-            // Get screen position from the native event
-            const screenPosition = {
-              x: event.nativeEvent.clientX,
-              y: event.nativeEvent.clientY,
-            };
-            onNodeContextMenu(node, screenPosition);
-          }
-        }
-      }
-    },
-    [camera, pointer, raycaster, nodeIndexMap, onNodeContextMenu],
-  );
-
   return (
     <instancedMesh
       key={`nodes-${nodeCount}`}
       ref={meshRef}
       args={[geometry, material, nodeCount]}
       onPointerMove={handlePointerMove}
-      onContextMenu={handleContextMenu}
       frustumCulled={true}
     />
   );

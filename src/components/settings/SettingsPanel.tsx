@@ -453,7 +453,7 @@ export function SettingsPanel({
                 </div>
 
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Sounds include: node select, hover, zoom, search typing, bookmarks, and more.
+                  Sounds include: node select, hover, zoom, search typing, and more.
                 </p>
               </div>
             )}
