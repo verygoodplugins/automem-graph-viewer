@@ -569,7 +569,11 @@ export default function App() {
         pendingFlyRef.current = true
         handleNodeSelect(node)
       } finally {
-        setLoadingResultId(null)
+        // Only the request that set the id clears it. A later off-graph click
+        // can replace loadingResultId with its own id while this fetch is still
+        // in flight; an unconditional clear would re-enable that newer row
+        // mid-load (loadingResultId is global, one row at a time).
+        setLoadingResultId((current) => (current === node.id ? null : current))
       }
     },
     [visibleNodeIds, nodes, handleResultSelect, handleNodeSelect, graph, queryClient, data?.meta?.type_colors, NEIGHBOR_PARAMS],
