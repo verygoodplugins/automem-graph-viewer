@@ -131,9 +131,12 @@ interface GraphCanvasProps {
   onResetViewReady?: (resetView: () => void) => void;
   // Expose an imperative camera-navigation handle to the parent (used by the
   // inspector navigate action, search-result clicks, and breadcrumb jumps).
-  // The parent passes a node id; GraphCanvas resolves the node's LIVE position
-  // and flies in + frames it. The minimap keeps the cheaper re-target navigator.
-  onNavigateForBookmarks?: (fn: (nodeId: string) => void) => void;
+  // The parent passes a node id (+ optional frame flag); GraphCanvas resolves the
+  // node's LIVE position and either re-targets gently or flies in + frames it.
+  // The minimap keeps the cheaper re-target navigator.
+  onNavigateForBookmarks?: (
+    fn: (nodeId: string, frame?: boolean) => void,
+  ) => void;
   // Pathfinding: highlight path nodes and edges
   pathNodeIds?: Set<string>;
   pathEdgeKeys?: Set<string>;
@@ -212,7 +215,7 @@ export function GraphCanvas({
   // Parent navigation: "fly in + frame" a node by id. Routed to the
   // inspector/search/breadcrumb handle so result clicks travel to + frame the node.
   const handleNavigateToNodeReady = useCallback(
-    (fn: (nodeId: string) => void) => {
+    (fn: (nodeId: string, frame?: boolean) => void) => {
       onNavigateForBookmarks?.(fn);
     },
     [onNavigateForBookmarks],
@@ -354,7 +357,9 @@ interface SceneProps extends Omit<
   }) => void;
   onLayoutNodesChange?: (nodes: SimulationNode[]) => void;
   onNavigateToReady?: (fn: (x: number, y: number) => void) => void;
-  onNavigateToNodeReady?: (fn: (nodeId: string) => void) => void;
+  onNavigateToNodeReady?: (
+    fn: (nodeId: string, frame?: boolean) => void,
+  ) => void;
   // Pathfinding
   pathNodeIds?: Set<string>;
   pathEdgeKeys?: Set<string>;
@@ -695,15 +700,20 @@ function Scene({
     [camera],
   );
 
-  // Fly the camera in and FRAME a single node, resolved by id from the LIVE
-  // simulated positions (layoutNodesRef) — the snapshot node objects App holds
-  // don't carry the in-place x/y/z, so we must look up the current position here.
-  // Animates both the orbit target and the camera distance (preserving view
-  // direction), ~600ms ease-out-cubic. Unlike navigateToCluster (which floors the
-  // distance at 20 — far for a node ~1-2 wide), this frames close so a clicked
-  // search result feels like "traveling to that point".
+  // Navigate the camera to a node, resolved by id from the LIVE simulated
+  // positions (layoutNodesRef) — the snapshot node objects App holds don't carry
+  // the in-place x/y/z, so we must look up the current position here.
+  //
+  // Two modes, so we don't disrupt existing interactions:
+  //  - frame=false (default): gentle re-target — pan the orbit center to the node
+  //    and KEEP the current zoom (400ms). Used for direct graph clicks, keyboard
+  //    nav, breadcrumb/inspector jumps — the pre-existing behavior.
+  //  - frame=true: fly in AND frame — animate the orbit target and the camera
+  //    distance (preserving view direction) so the node ends up centered and close
+  //    (600ms). Used for clicking a search result, which should "travel to" a node
+  //    that may be far off-screen. Distance floors closer than navigateToCluster.
   const navigateToNode = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, frame = false) => {
       if (!controlsRef.current) return;
       const node = layoutNodesRef.current.find((n) => n.id === nodeId);
       if (!node) return;
@@ -712,22 +722,24 @@ function Scene({
       const endTarget = new THREE.Vector3(node.x ?? 0, node.y ?? 0, node.z ?? 0);
       const startCamPos = camera.position.clone();
 
-      const fovRad =
-        ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
-      const r = node.radius && node.radius > 0 ? node.radius : 2;
-      // Frame the node + a little margin; much closer floor than the cluster path.
-      const desiredDistance = Math.max(
-        8,
-        Math.min(120, (r / Math.tan(fovRad)) * 8),
-      );
-
-      const viewDir = startCamPos.clone().sub(startTarget).normalize();
-      const endCamPos = endTarget
-        .clone()
-        .add(viewDir.multiplyScalar(desiredDistance));
+      let endCamPos = startCamPos;
+      if (frame) {
+        const fovRad =
+          ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
+        const r = node.radius && node.radius > 0 ? node.radius : 2;
+        // Frame the node + a little margin; much closer floor than the cluster path.
+        const desiredDistance = Math.max(
+          8,
+          Math.min(120, (r / Math.tan(fovRad)) * 8),
+        );
+        const viewDir = startCamPos.clone().sub(startTarget).normalize();
+        endCamPos = endTarget
+          .clone()
+          .add(viewDir.multiplyScalar(desiredDistance));
+      }
 
       const startTime = performance.now();
-      const duration = 600;
+      const duration = frame ? 600 : 400;
 
       const animate = () => {
         const elapsed = performance.now() - startTime;
@@ -735,7 +747,7 @@ function Scene({
         const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
 
         controls.target.lerpVectors(startTarget, endTarget, eased);
-        camera.position.lerpVectors(startCamPos, endCamPos, eased);
+        if (frame) camera.position.lerpVectors(startCamPos, endCamPos, eased);
         controls.update();
 
         if (progress < 1) {

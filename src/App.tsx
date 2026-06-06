@@ -256,12 +256,18 @@ export default function App() {
 
   // Imperative camera-navigation handle, populated by GraphCanvas. Used by the
   // inspector "navigate" action, breadcrumb jumps, and the select-to-focus effect.
-  const navigateForBookmarksRef = useRef<((nodeId: string) => void) | null>(null)
+  const navigateForBookmarksRef = useRef<
+    ((nodeId: string, frame?: boolean) => void) | null
+  >(null)
   const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   // Id we last flew the camera to, so search-box edits (which also retrigger the
   // effect below via searchTerm) don't re-fly to an already-centered node.
   const lastNavigatedIdRef = useRef<string | null>(null)
+  // Set just before a search-result click changes the selection, so that path
+  // gets the dramatic fly-in + frame while direct clicks / keyboard nav keep the
+  // gentle re-target.
+  const pendingFlyRef = useRef(false)
 
   // Open the sidebar for a selected node OR an active search; collapse otherwise.
   // This effect is the SINGLE navigator on selection — it flies + frames the node
@@ -280,7 +286,13 @@ export default function App() {
     if (selectedNode.id !== lastNavigatedIdRef.current) {
       lastNavigatedIdRef.current = selectedNode.id
       // Pass the id; GraphCanvas resolves the node's live simulated position.
-      navigateForBookmarksRef.current?.(selectedNode.id)
+      // Only search-result clicks fly in + frame; everything else (direct graph
+      // clicks, keyboard nav, breadcrumb/inspector jumps) keeps the gentle re-target.
+      const frame = pendingFlyRef.current
+      pendingFlyRef.current = false
+      navigateForBookmarksRef.current?.(selectedNode.id, frame)
+    } else {
+      pendingFlyRef.current = false
     }
   }, [selectedNode, searchTerm])
 
@@ -474,9 +486,16 @@ export default function App() {
 
   const handleInspectorNavigate = useCallback((node: GraphNode | null) => {
     if (!node) return
-    // handleNodeSelect sets selectedNode; the select-to-focus effect then flies +
-    // frames the node (with its radius). Path-selection is handled inside
-    // handleNodeSelect (it returns early without selecting), so no camera move there.
+    // handleNodeSelect sets selectedNode; the select-to-focus effect then gently
+    // re-targets the node. Path-selection is handled inside handleNodeSelect (it
+    // returns early without selecting), so no camera move there.
+    handleNodeSelect(node)
+  }, [handleNodeSelect])
+
+  // Clicking a search result should fly in + frame the node (it may be far
+  // off-screen), unlike a direct graph click which keeps the gentle re-target.
+  const handleResultSelect = useCallback((node: GraphNode) => {
+    pendingFlyRef.current = true
     handleNodeSelect(node)
   }, [handleNodeSelect])
 
@@ -948,7 +967,7 @@ export default function App() {
               <SearchResultsList
                 nodes={nodes}
                 searchTerm={searchTerm}
-                onSelect={handleNodeSelect}
+                onSelect={handleResultSelect}
               />
             ) : (
               <Inspector
