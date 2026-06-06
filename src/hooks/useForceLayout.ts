@@ -6,7 +6,11 @@ import {
   forceCenter,
   forceCollide,
   forceRadial,
+  forceX,
+  forceY,
+  forceZ,
 } from 'd3-force-3d'
+import type { PositionForce3D } from 'd3-force-3d'
 import type {
   GraphNode,
   GraphEdge,
@@ -15,6 +19,22 @@ import type {
   ForceConfig,
 } from '../lib/types'
 import { DEFAULT_FORCE_CONFIG } from '../lib/types'
+
+// Maps the 0–1 cluster-strength config knob to a real d3 force strength. Tuned
+// empirically (headless physics probe over a 2000-node entity-mode graph): at
+// the default 0.3 knob this yields s≈0.9, strong enough to drag members onto
+// their anchor (all 16 lobes centered) once charge is damped on anchored nodes.
+const CLUSTER_FORCE_SCALE = 3.0
+// forceManyBody (charge) at full strength across 2000 nodes overwhelms the
+// cluster force — lobes never tighten. Damp charge on anchored nodes to this
+// fraction so members settle into a compact ball around their anchor. 0.10 was
+// the probe sweet spot: tightest lobe with a positive surface-to-surface gap
+// (going to 0.08 overshot into overlap).
+const CLUSTER_CHARGE_DAMP = 0.1
+// forceRadial pulls every node toward origin-centered importance shells, which
+// fights the off-origin cluster anchors. When clustering is active, anchored
+// nodes get zero radial pull so the cluster force fully owns their position.
+const CLUSTER_RADIAL_DAMP = 0
 
 interface UseForceLayoutOptions {
   nodes: GraphNode[]
@@ -26,6 +46,22 @@ interface UseForceLayoutOptions {
    * fly in from a random Fibonacci-shell position.
    */
   expansionAnchors?: Map<string, string>
+  /**
+   * nodeId → deterministic cluster anchor {x,y,z}. When present, a genuine
+   * forceX/Y/Z pulls each member toward its anchor so cluster modes physically
+   * separate into spatial lobes. Single-valued per node (the caller collapses
+   * multi-membership to one dominant anchor) so a node is never pulled to dead
+   * space between two anchors.
+   */
+  clusterAnchors?: Map<string, { x: number; y: number; z: number }>
+  /** 0–1 cluster pull strength (from clusterConfig.clusterStrength). */
+  clusterForceStrength?: number
+  /**
+   * Structural cluster signature (the cluster MODE, not the strength). Folded
+   * into the layout cache key so flipping modes rebuilds + re-settles, while a
+   * strength-slider drag (same mode) mutates the live force in place instead.
+   */
+  clusterSignature?: string
 }
 
 interface LayoutState {
@@ -39,11 +75,15 @@ const layoutCache = {
   signature: '',
   nodes: [] as SimulationNode[],
   simulation: null as ReturnType<typeof forceSimulation> | null,
-  // Single source of truth for the settle alpha decision. computeLayout sets this
-  // (true = append/expansion → gentle settle; false = fresh overview → full
-  // settle) and the settle effect reads it, so the discriminator is never
+  // Single source of truth for the settle alpha decision. computeLayout picks the
+  // starting alpha (0.3 gentle append / 0.7 cluster-mode relocate / 1.0 fresh
+  // overview) and the settle effect reads it, so the discriminator is never
   // duplicated and can't drift between the two call sites.
-  lastWasAppend: false,
+  lastSettleAlpha: 1,
+  // The cluster MODE the cached layout was built for. A change here means the
+  // anchors moved (members must relocate), so we settle from a firmer alpha than
+  // a plain node-append even though every node survives.
+  clusterSignature: '',
 }
 
 // Helper to create data signature
@@ -140,7 +180,10 @@ function computeLayout(
   edges: GraphEdge[],
   forceConfig: ForceConfig,
   existingNodes: SimulationNode[],
-  expansionAnchors?: Map<string, string>
+  expansionAnchors?: Map<string, string>,
+  clusterAnchors?: Map<string, { x: number; y: number; z: number }>,
+  clusterForceStrength = 0,
+  clusterSignature = ''
 ): SimulationNode[] {
   // O(1) lookup of preserved positions (also powers seed-near-parent).
   const existingById = new Map(existingNodes.map((n) => [n.id, n]))
@@ -207,6 +250,9 @@ function computeLayout(
     connectedNodeIds.add(link.target as string)
   }
 
+  // Cluster force is live only when anchors were supplied for this mode.
+  const hasAnchor = !!clusterAnchors && clusterAnchors.size > 0
+
   // Stop existing simulation
   if (layoutCache.simulation) {
     layoutCache.simulation.stop()
@@ -224,7 +270,16 @@ function computeLayout(
         })
         .strength((d: SimulationLink) => d.strength * forceConfig.linkStrength)
     )
-    .force('charge', forceManyBody().strength(forceConfig.chargeStrength))
+    .force(
+      'charge',
+      forceManyBody().strength((d: SimulationNode) =>
+        // Anchored nodes get damped charge so the cluster force can pull them
+        // into a tight lobe; everyone else keeps full repulsion.
+        hasAnchor && clusterAnchors!.has(d.id)
+          ? forceConfig.chargeStrength * CLUSTER_CHARGE_DAMP
+          : forceConfig.chargeStrength,
+      ),
+    )
     .force('center', forceCenter(0, 0, 0).strength(forceConfig.centerStrength))
     .force(
       'collision',
@@ -239,15 +294,47 @@ function computeLayout(
         0,
         0,
         0
-      ).strength((d: SimulationNode) =>
+      ).strength((d: SimulationNode) => {
+        // An anchored node is governed by the cluster force; the origin-centered
+        // radial pull would fight its off-origin anchor, so damp it hard.
+        if (hasAnchor && clusterAnchors!.has(d.id)) return CLUSTER_RADIAL_DAMP
         // Isolated nodes (no edges in snapshot) get a much stronger radial pull so
         // they stay on their importance shell and remain visible in the viewport.
         // Connected nodes use a gentle 0.3 strength — link forces position them.
-        connectedNodeIds.has(d.id) ? 0.3 : 0.8
-      )
+        return connectedNodeIds.has(d.id) ? 0.3 : 0.8
+      })
     )
     .alphaDecay(0.02)
     .velocityDecay(0.3)
+
+  // Cluster force: pull each anchored member toward its deterministic anchor with
+  // a genuine d3 forceX/Y/Z. forceCollide then spreads members into a ball around
+  // the anchor, so cluster modes physically separate into distinct lobes. Strength
+  // is mutated live (without a rebuild) on a strength-slider change — see the
+  // strength effect in the hook below.
+  if (hasAnchor) {
+    const s = clusterForceStrength * CLUSTER_FORCE_SCALE
+    const strengthFor = (d: SimulationNode) => (clusterAnchors!.has(d.id) ? s : 0)
+    simulation
+      .force(
+        'clusterX',
+        forceX((d: SimulationNode) => clusterAnchors!.get(d.id)?.x ?? 0).strength(
+          strengthFor,
+        ),
+      )
+      .force(
+        'clusterY',
+        forceY((d: SimulationNode) => clusterAnchors!.get(d.id)?.y ?? 0).strength(
+          strengthFor,
+        ),
+      )
+      .force(
+        'clusterZ',
+        forceZ((d: SimulationNode) => clusterAnchors!.get(d.id)?.z ?? 0).strength(
+          strengthFor,
+        ),
+      )
+  }
 
   // Store simulation reference in cache for reheat / async settling
   layoutCache.simulation = simulation
@@ -271,9 +358,24 @@ function computeLayout(
     existingNodes.length > 0 && matchedExisting === existingNodes.length
   const grewModestly = simNodes.length - existingNodes.length < existingNodes.length
   const isAppend = allPriorSurvived && grewModestly
-  layoutCache.lastWasAppend = isAppend
 
-  const warmupTicks = isAppend ? 0 : 8
+  // A cluster-mode flip keeps every node (looks like a gentle append) but moves
+  // the anchors, so members must relocate. Detect it and settle from a firmer
+  // alpha than a plain append, while still avoiding the full fresh re-settle.
+  const clusterChanged = clusterSignature !== layoutCache.clusterSignature
+  layoutCache.clusterSignature = clusterSignature
+
+  let settleAlpha: number
+  if (isAppend && !clusterChanged) {
+    settleAlpha = 0.3 // gentle: existing nodes barely move, new neighbors settle
+  } else if (allPriorSurvived && clusterChanged) {
+    settleAlpha = 0.7 // firmer: relocate members to their new cluster anchors
+  } else {
+    settleAlpha = 1.0 // fresh overview / filter change
+  }
+  layoutCache.lastSettleAlpha = settleAlpha
+
+  const warmupTicks = settleAlpha <= 0.3 ? 0 : 8
   simulation.alpha(1)
   for (let i = 0; i < warmupTicks; i++) {
     simulation.tick()
@@ -288,6 +390,9 @@ export function useForceLayout({
   edges,
   forceConfig = DEFAULT_FORCE_CONFIG,
   expansionAnchors,
+  clusterAnchors,
+  clusterForceStrength = 0,
+  clusterSignature = '',
 }: UseForceLayoutOptions): LayoutState & { reheat: () => void; layoutTick: number } {
   const [isSimulating, setIsSimulating] = useState(false)
   const [layoutTick, setLayoutTick] = useState(0)
@@ -295,6 +400,13 @@ export function useForceLayout({
   // Handle to the in-flight rAF settling loop so we can cancel it on cleanup or
   // when a newer layout supersedes it.
   const rafRef = useRef<number | null>(null)
+
+  // The memo must build the simulation with the CURRENT strength, but must not
+  // re-run when only the strength changes (that's a live mutation, not a rebuild
+  // — see the strength effect below). Reading it through a ref keeps it out of
+  // the memo's dependency array.
+  const clusterForceStrengthRef = useRef(clusterForceStrength)
+  clusterForceStrengthRef.current = clusterForceStrength
 
   // Compute layout synchronously (construction + tiny warmup only), with
   // module-level caching. Immune to React Strict Mode double-invocation.
@@ -305,14 +417,18 @@ export function useForceLayout({
       return []
     }
 
-    // Key on nodes AND edges AND force config: an edges-only expansion or a
-    // force-slider change leaves the node set identical, but both must rebuild
-    // the simulation (new links / new forces). forceConfig is folded in by value
-    // so parent re-render identity churn doesn't trigger needless recomputes.
+    // Key on nodes AND edges AND force config AND cluster MODE: an edges-only
+    // expansion or a force-slider change leaves the node set identical, but each
+    // must rebuild the simulation (new links / new forces). forceConfig is folded
+    // in by value so parent re-render identity churn doesn't trigger needless
+    // recomputes. clusterSignature is the cluster MODE only (NOT the strength) —
+    // a strength-slider tick mutates the live force in place instead of rebuilding
+    // ~2000 nodes per drag frame.
     const signature =
       createDataSignature(nodes) +
       `|e:${createEdgeSignature(edges)}` +
-      `|f:${JSON.stringify(forceConfig)}`
+      `|f:${JSON.stringify(forceConfig)}` +
+      `|c:${clusterSignature}`
 
     // Check cache - if signature matches, return cached nodes
     if (signature === layoutCache.signature && layoutCache.nodes.length > 0) {
@@ -320,14 +436,25 @@ export function useForceLayout({
     }
 
     // Compute new layout
-    const computed = computeLayout(nodes, edges, forceConfig, layoutCache.nodes, expansionAnchors)
+    const computed = computeLayout(
+      nodes,
+      edges,
+      forceConfig,
+      layoutCache.nodes,
+      expansionAnchors,
+      clusterAnchors,
+      clusterForceStrengthRef.current,
+      clusterSignature,
+    )
 
     // Update cache
     layoutCache.signature = signature
     layoutCache.nodes = computed
 
     return computed
-  }, [nodes, edges, forceConfig, expansionAnchors])
+    // clusterForceStrength is intentionally NOT a dependency — it's read via ref
+    // and applied live by the strength effect, so a slider drag never rebuilds.
+  }, [nodes, edges, forceConfig, expansionAnchors, clusterAnchors, clusterSignature])
 
   // Drive the simulation asynchronously: a few ticks per animation frame,
   // bumping layoutTick each frame so consumers (usePositionInterpolation)
@@ -373,15 +500,14 @@ export function useForceLayout({
     rafRef.current = requestAnimationFrame(step)
   }, [])
 
-  // Kick off settling whenever a new layout is built. Fresh overviews settle from
-  // alpha 1.0; appends (expansion / edges-only) settle gently from ~0.3 so
-  // existing nodes barely move while newly-merged neighbors find their place.
-  // The append decision is made once in computeLayout and stashed on layoutCache,
-  // so the two call sites can never disagree.
+  // Kick off settling whenever a new layout is built. The starting alpha is
+  // chosen once in computeLayout and stashed on layoutCache (0.3 gentle append /
+  // 0.7 cluster-mode relocate / 1.0 fresh overview), so the two call sites can
+  // never disagree.
   useEffect(() => {
     if (layoutNodes.length === 0) return
 
-    runSimulationAsync(layoutCache.lastWasAppend ? 0.3 : 1.0)
+    runSimulationAsync(layoutCache.lastSettleAlpha)
 
     return () => {
       if (rafRef.current != null) {
@@ -395,6 +521,38 @@ export function useForceLayout({
   const reheat = useCallback(() => {
     runSimulationAsync(0.5)
   }, [runSimulationAsync])
+
+  // Strength-slider changes at the SAME cluster mode (cache hit, no rebuild):
+  // mutate the live cluster force in place and re-energize. d3's .strength(fn)
+  // re-runs the force's internal initialize() over the stored nodes, so the new
+  // strength takes effect on the next tick. Guarded by prevStrengthRef so this
+  // fires only on an actual strength change — never on the initial build (the
+  // memo already created the force at the right strength) and never piggybacking
+  // on a mode flip (which the 0.7 relocate-settle owns).
+  const prevStrengthRef = useRef(clusterForceStrength)
+  useEffect(() => {
+    if (prevStrengthRef.current === clusterForceStrength) return
+    prevStrengthRef.current = clusterForceStrength
+
+    const sim = layoutCache.simulation
+    if (!sim) return
+    const cx = sim.force('clusterX') as
+      | PositionForce3D<SimulationNode>
+      | undefined
+    if (!cx) return // no cluster force on this layout (mode === 'none')
+
+    const s = clusterForceStrength * CLUSTER_FORCE_SCALE
+    const strengthFor = (d: SimulationNode) =>
+      clusterAnchors && clusterAnchors.has(d.id) ? s : 0
+    cx.strength(strengthFor)
+    ;(sim.force('clusterY') as PositionForce3D<SimulationNode>).strength(
+      strengthFor,
+    )
+    ;(sim.force('clusterZ') as PositionForce3D<SimulationNode>).strength(
+      strengthFor,
+    )
+    runSimulationAsync(0.5)
+  }, [clusterForceStrength, clusterAnchors, runSimulationAsync])
 
   return { nodes: layoutNodes, isSimulating, reheat, layoutTick }
 }

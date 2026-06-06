@@ -103,7 +103,10 @@ function ClusterLabel({
           onPointerOut={handlePointerOut}
           onClick={handleClick}
         >
-          {cluster.memberCount} memories
+          {cluster.memberCount} grouped
+          {cluster.taggedCount > cluster.memberCount
+            ? ` · ${cluster.taggedCount} tagged`
+            : ""}
           {cluster.topTags.length > 0
             ? ` · ${cluster.topTags.slice(0, 3).join(", ")}`
             : ""}

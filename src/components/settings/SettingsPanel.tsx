@@ -169,7 +169,12 @@ export function SettingsPanel({
           <div className="space-y-1.5">
             <label className="text-xs text-ink-3">Overview size</label>
             <div className="flex gap-1">
-              {[500, 1000, 2000].map((n) => (
+              {/* Surface the hidden `?cap=` override value as a button so a
+                  no-cap test session can re-select it after toggling presets. */}
+              {Array.from(new Set([500, 1000, 2000, filters.maxNodes]))
+                .filter((n) => n > 0)
+                .sort((a, b) => a - b)
+                .map((n) => (
                 <button
                   key={n}
                   onClick={() => onFiltersChange({ maxNodes: n })}

@@ -119,20 +119,47 @@ export interface SnapshotParams {
 }
 
 /**
- * Server hard-caps snapshots at 2,000 rows (min(limit, 2000) in graph.py).
- * Mirror that ceiling here so the client never asks for more than the server
- * will return, and never emits `limit=0` (which the server runs as Cypher
- * `LIMIT 0` → zero rows — the "Select All loads nothing" bug).
+ * Default snapshot row ceiling. Historically this mirrored the server's
+ * `min(limit, 2000)` hard cap; that server cap was lifted in automem PR #141,
+ * so 2,000 now stands for the *client-side* limit — the main-thread physics
+ * wall (d3-force-3d + R3F on the UI thread). It also keeps the client from ever
+ * emitting `limit=0` (which the server runs as Cypher `LIMIT 0` → zero rows —
+ * the "Select All loads nothing" bug). Override via {@link getSnapshotCap}.
  */
 export const MAX_SNAPSHOT = 2000
+
+/**
+ * Hidden escape hatch for testing larger graphs on powerful hardware now that
+ * the server cap is gone (PR #141). Set `?cap=10000` in the URL (highest
+ * priority) or `localStorage.automem_snapshot_cap = '10000'`. Anything missing,
+ * non-numeric, or ≤ 0 falls back to {@link MAX_SNAPSHOT}. There is intentionally
+ * no UI for this — past ~2k nodes the on-main-thread sim can stutter, so it's a
+ * deliberate opt-in, not a default knob.
+ */
+export function getSnapshotCap(): number {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('cap')
+    const fromStorage = window.localStorage.getItem('automem_snapshot_cap')
+    const raw = fromUrl ?? fromStorage
+    // Floor BEFORE the positivity check: a sub-unit cap like `0.5` would pass
+    // `n > 0` yet floor to 0, seeding limit=0 (the empty-snapshot bug). Require
+    // the floored value to be >= 1.
+    const n = raw == null ? NaN : Math.floor(Number(raw))
+    return Number.isFinite(n) && n >= 1 ? n : MAX_SNAPSHOT
+  } catch {
+    return MAX_SNAPSHOT
+  }
+}
 
 export async function fetchGraphSnapshot(params: SnapshotParams = {}): Promise<GraphSnapshot> {
   const searchParams = new URLSearchParams()
 
   // Treat 0 / missing / NaN as "use the cap," never the floor. A falsy or
-  // non-positive limit means "as much as allowed," not "nothing."
-  const requested = params.limit && params.limit > 0 ? params.limit : MAX_SNAPSHOT
-  searchParams.set('limit', String(Math.min(requested, MAX_SNAPSHOT)))
+  // non-positive limit means "as much as allowed," not "nothing." The ceiling
+  // is the hidden override when present, else MAX_SNAPSHOT.
+  const cap = getSnapshotCap()
+  const requested = params.limit && params.limit > 0 ? params.limit : cap
+  searchParams.set('limit', String(Math.min(requested, cap)))
   if (params.minImportance != null) searchParams.set('min_importance', String(params.minImportance))
   if (params.types?.length) searchParams.set('types', params.types.join(','))
   if (params.since) searchParams.set('since', params.since)

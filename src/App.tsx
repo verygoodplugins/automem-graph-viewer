@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
 import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { normalizeNode } from './lib/normalizeNode'
-import { fetchGraphNeighbors } from './api/client'
+import { fetchGraphNeighbors, getSnapshotCap } from './api/client'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
@@ -236,7 +236,10 @@ export default function App() {
   const [filters, setFilters] = useState<FilterState>({
     types: [],
     importanceRange: [0.3, 1],
-    maxNodes: 2000,
+    // Defaults to 2000; honors the hidden `?cap=`/localStorage override so a
+    // no-cap test session actually requests that many nodes, not just lifts
+    // the client clamp.
+    maxNodes: getSnapshotCap(),
   })
   const [hasSetDefaultImportance, setHasSetDefaultImportance] = useState(false)
 
