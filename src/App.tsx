@@ -256,29 +256,31 @@ export default function App() {
 
   // Imperative camera-navigation handle, populated by GraphCanvas. Used by the
   // inspector "navigate" action, breadcrumb jumps, and the select-to-focus effect.
-  const navigateForBookmarksRef = useRef<
-    ((x: number, y: number, z?: number, radius?: number) => void) | null
-  >(null)
+  const navigateForBookmarksRef = useRef<((nodeId: string) => void) | null>(null)
   const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
+  // Id we last flew the camera to, so search-box edits (which also retrigger the
+  // effect below via searchTerm) don't re-fly to an already-centered node.
+  const lastNavigatedIdRef = useRef<string | null>(null)
 
   // Open the sidebar for a selected node OR an active search; collapse otherwise.
   // This effect is the SINGLE navigator on selection — it flies + frames the node
-  // (passing its radius). Every selection path funnels through here, so we don't
-  // fire a competing camera animation elsewhere.
+  // (passing its radius) only when the selected node actually changes. Every
+  // selection path funnels through here, so we don't fire a competing animation.
   useEffect(() => {
     if (selectedNode || searchTerm.trim()) {
       inspectorPanelRef.current?.expand()
     } else {
       inspectorPanelRef.current?.collapse()
     }
-    if (selectedNode) {
-      navigateForBookmarksRef.current?.(
-        selectedNode.x ?? 0,
-        selectedNode.y ?? 0,
-        selectedNode.z ?? 0,
-        selectedNode.radius,
-      )
+    if (!selectedNode) {
+      lastNavigatedIdRef.current = null
+      return
+    }
+    if (selectedNode.id !== lastNavigatedIdRef.current) {
+      lastNavigatedIdRef.current = selectedNode.id
+      // Pass the id; GraphCanvas resolves the node's live simulated position.
+      navigateForBookmarksRef.current?.(selectedNode.id)
     }
   }, [selectedNode, searchTerm])
 

@@ -131,11 +131,9 @@ interface GraphCanvasProps {
   onResetViewReady?: (resetView: () => void) => void;
   // Expose an imperative camera-navigation handle to the parent (used by the
   // inspector navigate action, search-result clicks, and breadcrumb jumps).
-  // The parent gets the "fly in + frame" navigator (accepts the node radius);
-  // the minimap keeps the cheaper re-target-only navigator internally.
-  onNavigateForBookmarks?: (
-    fn: (x: number, y: number, z?: number, radius?: number) => void,
-  ) => void;
+  // The parent passes a node id; GraphCanvas resolves the node's LIVE position
+  // and flies in + frames it. The minimap keeps the cheaper re-target navigator.
+  onNavigateForBookmarks?: (fn: (nodeId: string) => void) => void;
   // Pathfinding: highlight path nodes and edges
   pathNodeIds?: Set<string>;
   pathEdgeKeys?: Set<string>;
@@ -211,10 +209,10 @@ export function GraphCanvas({
     [],
   );
 
-  // Parent navigation: "fly in + frame" a node (accepts radius). Routed to the
+  // Parent navigation: "fly in + frame" a node by id. Routed to the
   // inspector/search/breadcrumb handle so result clicks travel to + frame the node.
   const handleNavigateToNodeReady = useCallback(
-    (fn: (x: number, y: number, z?: number, radius?: number) => void) => {
+    (fn: (nodeId: string) => void) => {
       onNavigateForBookmarks?.(fn);
     },
     [onNavigateForBookmarks],
@@ -356,9 +354,7 @@ interface SceneProps extends Omit<
   }) => void;
   onLayoutNodesChange?: (nodes: SimulationNode[]) => void;
   onNavigateToReady?: (fn: (x: number, y: number) => void) => void;
-  onNavigateToNodeReady?: (
-    fn: (x: number, y: number, z?: number, radius?: number) => void,
-  ) => void;
+  onNavigateToNodeReady?: (fn: (nodeId: string) => void) => void;
   // Pathfinding
   pathNodeIds?: Set<string>;
   pathEdgeKeys?: Set<string>;
@@ -417,6 +413,12 @@ function Scene({
     reheat,
     layoutTick,
   } = useForceLayout({ nodes, edges, forceConfig, expansionAnchors });
+
+  // Live, always-current view of the simulated nodes. navigateToNode reads this
+  // by id so it flies to a node's CURRENT position — the snapshot node objects
+  // App holds don't carry the in-place simulation x/y/z, only layoutNodes do.
+  const layoutNodesRef = useRef(layoutNodes);
+  layoutNodesRef.current = layoutNodes;
 
   // Depth-based selection dimming: auto-spotlight when a node is selected
   const focusStates = useMemo(() => {
@@ -693,21 +695,26 @@ function Scene({
     [camera],
   );
 
-  // Fly the camera in and FRAME a single node: animate both the orbit target and
-  // the camera distance (preserving view direction), ~600ms ease-out-cubic. Unlike
-  // navigateToCluster (which floors the distance at 20 — far for a node ~1-2 wide),
-  // this frames close so a clicked search result feels like "traveling to that point".
+  // Fly the camera in and FRAME a single node, resolved by id from the LIVE
+  // simulated positions (layoutNodesRef) — the snapshot node objects App holds
+  // don't carry the in-place x/y/z, so we must look up the current position here.
+  // Animates both the orbit target and the camera distance (preserving view
+  // direction), ~600ms ease-out-cubic. Unlike navigateToCluster (which floors the
+  // distance at 20 — far for a node ~1-2 wide), this frames close so a clicked
+  // search result feels like "traveling to that point".
   const navigateToNode = useCallback(
-    (x: number, y: number, z = 0, radius?: number) => {
+    (nodeId: string) => {
       if (!controlsRef.current) return;
+      const node = layoutNodesRef.current.find((n) => n.id === nodeId);
+      if (!node) return;
       const controls = controlsRef.current;
       const startTarget = controls.target.clone();
-      const endTarget = new THREE.Vector3(x, y, z);
+      const endTarget = new THREE.Vector3(node.x ?? 0, node.y ?? 0, node.z ?? 0);
       const startCamPos = camera.position.clone();
 
       const fovRad =
         ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
-      const r = radius && radius > 0 ? radius : 2;
+      const r = node.radius && node.radius > 0 ? node.radius : 2;
       // Frame the node + a little margin; much closer floor than the cluster path.
       const desiredDistance = Math.max(
         8,
