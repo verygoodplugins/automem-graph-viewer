@@ -12,8 +12,11 @@ interface ClusterBoundariesProps {
 
 const FADE_SPEED = 3;
 const FADE_DURATION_MS = 1200;
-const BASE_OPACITY = 0.12;
-const HOVER_OPACITY = 0.25;
+// Additive blending (below) accumulates overlapping dots into a glowing core,
+// so the per-dot opacity stays modest while the lobe still reads as a luminous
+// nebula against the dark scene. These were near-invisible at 0.12/normal blend.
+const BASE_OPACITY = 0.22;
+const HOVER_OPACITY = 0.45;
 
 // Nebula-style point cloud: very small dots distributed through the volume
 function generateNebulaPoints(radius: number, count: number): Float32Array {
@@ -46,8 +49,8 @@ function ClusterBoundary({
 
   const effectiveTarget = isHovered ? HOVER_OPACITY : targetOpacity;
 
-  // More points for larger clusters, but keep them subtle
-  const pointCount = Math.max(80, Math.floor(cluster.radius * 4));
+  // Denser fill so the volume reads as a continuous haze, not sparse specks.
+  const pointCount = Math.max(140, Math.floor(cluster.radius * 6));
 
   const positions = useMemo(
     () => generateNebulaPoints(cluster.radius, pointCount),
@@ -79,11 +82,12 @@ function ClusterBoundary({
       <pointsMaterial
         ref={materialRef}
         color={color}
-        size={0.6}
+        size={1.1}
         transparent
         opacity={0}
         sizeAttenuation
         depthWrite={false}
+        blending={THREE.AdditiveBlending}
       />
     </points>
   );

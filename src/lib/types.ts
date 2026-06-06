@@ -181,7 +181,10 @@ export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
   showArrows: false,
   nodeSizeScale: 1.0,
   linkThickness: 1.0,
-  linkOpacity: 0.6,
+  // Edges read as a faint web behind the nodes/lobes, not a dominant lattice.
+  // linkOpacity is effectively squared in the renderer (baked into vertex color
+  // AND the line material), so 0.3 lands at ~0.09 perceived weight.
+  linkOpacity: 0.3,
 }
 
 export const DEFAULT_CLUSTER_CONFIG: ClusterConfig = {

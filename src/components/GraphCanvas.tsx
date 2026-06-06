@@ -1352,7 +1352,7 @@ function Scene({
         <ClusterBoundaries
           clusters={displayClusters}
           visible={clusterConfig.showBoundaries}
-          opacity={0.08}
+          opacity={0.2}
           hoveredClusterId={hoveredClusterId}
         />
         <ClusterLabels
