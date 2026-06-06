@@ -61,10 +61,6 @@ interface NodeFocusState {
 
 const SELECTION_DEPTH_OPACITY = [1.0, 1.0, 0.7, 0.4];
 const SELECTION_DEFAULT_OPACITY = 0.15;
-// Cap how many cluster hulls/labels render so tags/entity modes (which can yield
-// dozens of small clusters) don't bury the scene in floating text. We keep the
-// largest N by member count; the force still anchors every cluster.
-const MAX_VISIBLE_CLUSTERS = 16;
 
 // Importance halo: scale a default node's emissive brightness by its importance
 // so the bloom pass blooms high-importance memories into glowing halos. The node
@@ -583,16 +579,6 @@ function Scene({
   const { currentPositions: animPositions, nodeIdToIdx } =
     usePositionInterpolation(layoutNodes, { lerpSpeed: 5, layoutTick });
 
-  // Cap how many hulls/labels render (see MAX_VISIBLE_CLUSTERS). tags/entity modes
-  // can produce dozens of small clusters; we keep the largest N by member count.
-  // The force still anchors every cluster — this only thins the rendered overlay.
-  const visibleClusters = useMemo(() => {
-    if (clusters.length <= MAX_VISIBLE_CLUSTERS) return clusters;
-    return [...clusters]
-      .sort((a, b) => b.memberCount - a.memberCount)
-      .slice(0, MAX_VISIBLE_CLUSTERS);
-  }, [clusters]);
-
   // Display clusters: hull + label centroid/radius recomputed from where the
   // force-anchored members ACTUALLY settled, not from the deterministic anchor.
   // The anchor (clusterAnchorsByNodeId, built from `clusters`) still drives the
@@ -617,7 +603,10 @@ function Scene({
       if (n.x == null || n.y == null || n.z == null) continue;
       posById.set(n.id, { x: n.x, y: n.y, z: n.z });
     }
-    return visibleClusters.map((c) => {
+    // `clusters` is already bounded by useClusterDetection (MAX_ACTIVE_CLUSTERS) —
+    // the single source of truth for how many lobes exist — so every cluster the
+    // force anchors gets a hull/label. No separate render cap.
+    return clusters.map((c) => {
       const pts: { x: number; y: number; z: number }[] = [];
       c.nodeIds.forEach((id) => {
         // Reference equality with the deterministic anchor identifies the nodes
@@ -657,7 +646,7 @@ function Scene({
     // mutates layoutNodes in place (stable ref), so layoutTick is what signals a
     // position change and forces this memo to re-read the settled positions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleClusters, clusterAnchorsByNodeId, layoutNodes, layoutTick]);
+  }, [clusters, clusterAnchorsByNodeId, layoutNodes, layoutTick]);
 
   // Expose reheat function to parent
   useEffect(() => {
@@ -1695,6 +1684,17 @@ function BatchedEdges({
     }
   }, [maxEdges]);
 
+  // Colors are written in the useMemo above, only when its deps change — not per
+  // frame. Flag the color attribute for a single GPU re-upload on that recompute.
+  // `edgeIndices` is a fresh array on every color rewrite, so its identity change
+  // is exactly the "colors changed" signal.
+  useEffect(() => {
+    const colorAttr = lineRef.current?.geometry.getAttribute("color") as
+      | THREE.BufferAttribute
+      | undefined;
+    if (colorAttr) colorAttr.needsUpdate = true;
+  }, [edgeIndices]);
+
   // Scratch arc points (EDGE_SEGMENTS+1 points × 3 floats), reused per edge so
   // the per-frame curve sampling allocates nothing.
   const arcPtsRef = useRef(new Float32Array((EDGE_SEGMENTS + 1) * 3));
@@ -1797,12 +1797,13 @@ function BatchedEdges({
 
     const geometry = lineRef.current.geometry;
     const posAttr = geometry.getAttribute("position") as THREE.BufferAttribute;
-    const colorAttr = geometry.getAttribute("color") as THREE.BufferAttribute;
+    // Positions are rewritten every frame (curve sampling) → flag them dirty here.
+    // Colors are NOT — they're written only in the useMemo above, so their GPU
+    // upload is flagged in a separate effect keyed on that recompute. Flagging the
+    // color attribute every frame forced a full re-upload of the (unchanged,
+    // 6x-larger curved-edge) color buffer every frame.
     if (posAttr) {
       posAttr.needsUpdate = true;
-    }
-    if (colorAttr) {
-      colorAttr.needsUpdate = true;
     }
     geometry.setDrawRange(0, visibleCount * EDGE_VERTS);
     geometry.computeBoundingSphere();
