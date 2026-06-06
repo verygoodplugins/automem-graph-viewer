@@ -12,6 +12,13 @@ interface SearchBarProps {
   onClearAll?: () => void
   matchingCount?: number
   totalCount?: number
+  /** A text search is active — show the whole-store match count, not matching/total. */
+  searchActive?: boolean
+  /** Whole-store match count from /recall (rendered as "N matches", "+" when capped). */
+  searchResultCount?: number
+  searchResultCapped?: boolean
+  /** Recall request in flight. */
+  searchLoading?: boolean
 }
 
 export function SearchBar({
@@ -24,6 +31,10 @@ export function SearchBar({
   onClearAll,
   matchingCount,
   totalCount,
+  searchActive = false,
+  searchResultCount,
+  searchResultCapped = false,
+  searchLoading = false,
 }: SearchBarProps) {
   const [localValue, setLocalValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -33,7 +44,12 @@ export function SearchBar({
   }, [])
 
   const hasChips = chips.length > 0
-  const showCount = matchingCount != null && totalCount != null && hasChips
+  // During a text search the meaningful number is the whole-store match count
+  // (from /recall), not "matching-local / loaded" — that would read as exhaustive.
+  // The matching/total badge is reserved for tag-only filtering (purely client-side).
+  const showSearchCount = searchActive && (searchResultCount != null || searchLoading)
+  const showCount =
+    !searchActive && matchingCount != null && totalCount != null && hasChips
 
   // Debounce the onChange callback
   useEffect(() => {
@@ -174,7 +190,28 @@ export function SearchBar({
         </div>
       </div>
 
-      {/* Filter count badge */}
+      {/* Whole-store search match count (takes precedence during a text search) */}
+      {showSearchCount && (
+        <span
+          className="font-mono text-xs text-ink-3 whitespace-nowrap flex-shrink-0"
+          title="Matches across all your memories"
+        >
+          {searchResultCount == null ? (
+            '…'
+          ) : (
+            <>
+              <span className="text-accent">
+                {searchResultCount.toLocaleString()}
+                {searchResultCapped ? '+' : ''}
+              </span>
+              {' '}
+              {searchResultCount === 1 ? 'match' : 'matches'}
+            </>
+          )}
+        </span>
+      )}
+
+      {/* Filter count badge (tag-only filtering) */}
       {showCount && (
         <span className="font-mono text-xs text-ink-3 whitespace-nowrap flex-shrink-0">
           <span className="text-ink-2">{matchingCount.toLocaleString()}</span>

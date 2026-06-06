@@ -37,8 +37,12 @@ function finiteOr(value: unknown, fallback: number): number {
  * Coerce any merged node into the exact shape a snapshot node has, with safe
  * defaults for every field the simulation, inspector, or time-travel touch.
  * Idempotent on already-complete snapshot nodes.
+ *
+ * Exported so the /recall result mapper (`mapRecallResultToNode` in api/client)
+ * runs search results through the *same* normalization path before they're shown
+ * in the list or merged into the graph — one source of truth for node shape.
  */
-function normalizeNode(node: GraphNode, typeColors: Record<string, string>): GraphNode {
+export function normalizeNode(node: GraphNode, typeColors: Record<string, string>): GraphNode {
   const importance = finiteOr(node.importance, 0.5)
   const confidence = finiteOr(node.confidence, 0.8)
   const type = node.type ?? 'Memory'

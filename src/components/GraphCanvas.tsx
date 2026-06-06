@@ -432,6 +432,14 @@ function Scene({
   const layoutNodesRef = useRef(layoutNodes);
   layoutNodesRef.current = layoutNodes;
 
+  // Live view of whether the sim is still settling. A frame-fly to a freshly
+  // injected off-graph node must KEEP following it: the append-settle moves that
+  // node for ~1–2s after the 600ms fly would otherwise end, leaving the camera
+  // frozen on empty space. navigateToNode reads this each frame to decide when
+  // to stop tracking.
+  const simRef = useRef(isSimulating);
+  simRef.current = isSimulating;
+
   // Depth-based selection dimming: auto-spotlight when a node is selected
   const focusStates = useMemo(() => {
     const result = new Map<string, NodeFocusState>();
@@ -726,38 +734,84 @@ function Scene({
       if (!node) return;
       const controls = controlsRef.current;
       const startTarget = controls.target.clone();
-      const endTarget = new THREE.Vector3(node.x ?? 0, node.y ?? 0, node.z ?? 0);
       const startCamPos = camera.position.clone();
 
-      let endCamPos = startCamPos;
-      if (frame) {
-        const fovRad =
-          ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
-        const r = node.radius && node.radius > 0 ? node.radius : 2;
-        // Frame the node + a little margin; much closer floor than the cluster path.
-        const desiredDistance = Math.max(
-          8,
-          Math.min(120, (r / Math.tan(fovRad)) * 8),
+      // Plain fly: ease the orbit target to a FIXED endpoint over 400ms. Used for
+      // breadcrumb / inspector / linear-nav jumps to nodes already settled in the
+      // graph, where the target isn't moving — no need to track it.
+      if (!frame) {
+        const endTarget = new THREE.Vector3(
+          node.x ?? 0,
+          node.y ?? 0,
+          node.z ?? 0,
         );
-        const viewDir = startCamPos.clone().sub(startTarget).normalize();
-        endCamPos = endTarget
-          .clone()
-          .add(viewDir.multiplyScalar(desiredDistance));
+        const startTime = performance.now();
+        const duration = 400;
+        const animate = () => {
+          const progress = Math.min(
+            (performance.now() - startTime) / duration,
+            1,
+          );
+          const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
+          controls.target.lerpVectors(startTarget, endTarget, eased);
+          controls.update();
+          if (progress < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+        return;
       }
 
+      // Frame-fly: travel to AND frame the node, then KEEP following it until the
+      // sim settles. Clicking a search result can inject a fresh off-graph node;
+      // the append-settle then pulls it inward for ~1–2s AFTER a one-shot 600ms
+      // fly would end — freezing the camera on empty space with the cluster shoved
+      // into a corner (worse the farther the node seeds from origin). So instead of
+      // capturing the endpoint once, we re-read the node's LIVE position each frame,
+      // recompute the framed endpoint against it, and keep ticking past the ease
+      // until isSimulating goes false (≈3s hard cap as a backstop only).
+      const fovRad =
+        ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
+      const r = node.radius && node.radius > 0 ? node.radius : 2;
+      // Frame the node + a little margin; much closer floor than the cluster path.
+      const desiredDistance = Math.max(
+        8,
+        Math.min(120, (r / Math.tan(fovRad)) * 8),
+      );
+      // Approach direction is captured ONCE so the camera doesn't swing around the
+      // moving target; only the distance-to-node endpoint tracks the live position.
+      const viewOffset = startCamPos
+        .clone()
+        .sub(startTarget)
+        .normalize()
+        .multiplyScalar(desiredDistance);
+      const liveTarget = new THREE.Vector3();
+      const liveCamPos = new THREE.Vector3();
+
       const startTime = performance.now();
-      const duration = frame ? 600 : 400;
+      const duration = 600;
+      const settleCap = 3000; // backstop only; isSimulating is the real terminator
 
       const animate = () => {
         const elapsed = performance.now() - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
 
-        controls.target.lerpVectors(startTarget, endTarget, eased);
-        if (frame) camera.position.lerpVectors(startCamPos, endCamPos, eased);
+        // Re-read the node each frame: the sim mutates positions, and on a
+        // snapshot reset the node may vanish — bail cleanly if so.
+        const live = layoutNodesRef.current.find((n) => n.id === nodeId);
+        if (!live) return;
+        liveTarget.set(live.x ?? 0, live.y ?? 0, live.z ?? 0);
+        liveCamPos.copy(liveTarget).add(viewOffset);
+
+        // Once the ease completes (eased === 1) these lerps land exactly on the
+        // live endpoints, so the camera locks onto the node and follows its drift.
+        controls.target.lerpVectors(startTarget, liveTarget, eased);
+        camera.position.lerpVectors(startCamPos, liveCamPos, eased);
         controls.update();
 
-        if (progress < 1) {
+        // Keep ticking while the ease is unfinished, OR while the sim is still
+        // moving the node (under the cap). Stop once framed AND settled.
+        if (progress < 1 || (simRef.current && elapsed < settleCap)) {
           requestAnimationFrame(animate);
         }
       };

@@ -2,8 +2,10 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Keyboard, Settings } from 'lucide-react'
 
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
-import { useGraphSnapshot } from './hooks/useGraphData'
-import { useExpandableGraph } from './hooks/useExpandableGraph'
+import { useQueryClient } from '@tanstack/react-query'
+import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
+import { useExpandableGraph, normalizeNode } from './hooks/useExpandableGraph'
+import { fetchGraphNeighbors } from './api/client'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
@@ -125,6 +127,9 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  // Id of an off-graph search result currently being fetched + injected (the row
+  // shows a spinner and is disabled until the neighborhood merges in).
+  const [loadingResultId, setLoadingResultId] = useState<string | null>(null)
   const [gestureControlEnabled, setGestureControlEnabled] = useState(false)
   const [debugOverlayVisible, setDebugOverlayVisible] = useState(false)
   const [performanceMode, setPerformanceMode] = useState(false)
@@ -317,6 +322,13 @@ export default function App() {
   // expanding a node's neighborhood. This is the source of truth for what renders.
   const graph = useExpandableGraph(data)
 
+  const queryClient = useQueryClient()
+
+  // Whole-store search via /recall (debounced upstream by the SearchBar). This is
+  // what makes search find memories that aren't in the loaded snapshot — the fix
+  // for "search only sees ~2k of ~120k". Disabled until the term is non-empty.
+  const recall = useRecall(searchTerm, data?.meta?.type_colors)
+
   // Stable data references. Once the snapshot has seeded the expandable graph,
   // read from it (so expansions are visible); fall back to the raw snapshot for
   // the one render between data arriving and the reset effect firing (identical
@@ -421,6 +433,18 @@ export default function App() {
     return filtered.length
   }, [nodes, tagCloud.hasActiveFilter, tagCloud.filteredNodeIds, searchTerm, filterChips.hasActiveFilters])
 
+  // Loaded nodes passing the TAG filter only. The StatsBar ("of loaded scene") is
+  // about what's rendered, so it keys off tag filtering — which is genuinely
+  // client-side over loaded nodes. Text search is whole-store and reports its count
+  // separately in the SearchBar, so it must NOT shrink this "loaded" number (that's
+  // exactly the "2 of 2,000 reads as exhaustive" bug).
+  const tagVisibleNodeCount = useMemo(() => {
+    if (!tagCloud.hasActiveFilter) return nodes.length
+    return nodes.filter((n) => tagCloud.filteredNodeIds.has(n.id)).length
+  }, [nodes, tagCloud.hasActiveFilter, tagCloud.filteredNodeIds])
+
+  const searchActive = searchTerm.trim().length > 0
+
   // Sound Effects
   const sound = useSoundEffects()
 
@@ -498,6 +522,53 @@ export default function App() {
     pendingFlyRef.current = true
     handleNodeSelect(node)
   }, [handleNodeSelect])
+
+  // Clicking ANY search result, including one not in the loaded scene. In-graph →
+  // the gentle fly + frame above. Off-graph → fetch its neighborhood and merge the
+  // center + neighbors as a connected cluster (not a lone dot), then fly to it. The
+  // neighbors fetch reuses the exact query key + params the Inspector's
+  // useGraphNeighbors uses, so the cache dedupes and the Inspector won't refetch.
+  const NEIGHBOR_PARAMS = useMemo(
+    () => ({ depth: 1, includeSemantic: true, semanticLimit: 5 }),
+    [],
+  )
+  const handleRemoteResultSelect = useCallback(
+    async (node: GraphNode) => {
+      if (visibleNodeIds.has(node.id)) {
+        // Already loaded — select the REAL graph node, not the degraded recall
+        // node (whose type is the generic "Memory" + fallback color), so the
+        // Inspector header shows the true type/color.
+        const real = nodes.find((n) => n.id === node.id) ?? node
+        handleResultSelect(real)
+        return
+      }
+      const typeColors = data?.meta?.type_colors ?? {}
+      setLoadingResultId(node.id)
+      try {
+        const neighbors = await queryClient.fetchQuery({
+          queryKey: ['graph', 'neighbors', node.id, NEIGHBOR_PARAMS],
+          queryFn: () => fetchGraphNeighbors(node.id, NEIGHBOR_PARAMS),
+        })
+        graph.expand({
+          centerId: node.id,
+          nodes: [neighbors.center, ...neighbors.graph_neighbors, ...neighbors.semantic_neighbors],
+          edges: neighbors.edges,
+        })
+        // Select the normalized center (real type/color from the graph) so the
+        // Inspector header is correct and the select-to-focus effect flies to it.
+        pendingFlyRef.current = true
+        handleNodeSelect(normalizeNode(neighbors.center, typeColors))
+      } catch {
+        // Fetch failed — inject the bare result so the click never dead-ends.
+        graph.expand({ centerId: node.id, nodes: [node], edges: [] })
+        pendingFlyRef.current = true
+        handleNodeSelect(node)
+      } finally {
+        setLoadingResultId(null)
+      }
+    },
+    [visibleNodeIds, nodes, handleResultSelect, handleNodeSelect, graph, queryClient, data?.meta?.type_colors, NEIGHBOR_PARAMS],
+  )
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
@@ -686,13 +757,17 @@ export default function App() {
           onClearAll={filterChips.clearAll}
           matchingCount={clientVisibleNodeCount}
           totalCount={nodes.length}
+          searchActive={searchActive}
+          searchResultCount={recall.data?.count}
+          searchResultCapped={recall.data?.capped}
+          searchLoading={recall.isLoading}
         />
 
         <StatsBar
           stats={data?.stats}
           isLoading={isLoading}
-          clientVisibleCount={clientVisibleNodeCount}
-          hasClientFilter={filterChips.hasActiveFilters}
+          clientVisibleCount={tagVisibleNodeCount}
+          hasClientFilter={tagCloud.hasActiveFilter}
         />
 
         {/* Performance Mode Toggle */}
@@ -966,8 +1041,15 @@ export default function App() {
             {!selectedNode && searchTerm.trim() ? (
               <SearchResultsList
                 nodes={nodes}
+                results={recall.data?.results ?? EMPTY_NODES}
+                count={recall.data?.count}
+                capped={recall.data?.capped}
+                isLoading={recall.isLoading}
+                isError={recall.isError}
+                loadingId={loadingResultId}
+                inGraphIds={visibleNodeIds}
                 searchTerm={searchTerm}
-                onSelect={handleResultSelect}
+                onSelect={handleRemoteResultSelect}
               />
             ) : (
               <Inspector
