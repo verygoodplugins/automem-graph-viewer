@@ -62,6 +62,7 @@ import {
   PinchPreSelectHighlight,
 } from "./SelectionHighlight";
 import { getEdgeStyle } from "../lib/edgeStyles";
+import { matchesSearch } from "../lib/searchMatch";
 import { EdgeParticles } from "./EdgeParticles";
 import { MiniMap } from "./MiniMap";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -129,9 +130,11 @@ interface GraphCanvasProps {
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
   // Expose an imperative camera-navigation handle to the parent (used by the
-  // inspector navigate action and breadcrumb jumps).
+  // inspector navigate action, search-result clicks, and breadcrumb jumps).
+  // The parent gets the "fly in + frame" navigator (accepts the node radius);
+  // the minimap keeps the cheaper re-target-only navigator internally.
   onNavigateForBookmarks?: (
-    fn: (x: number, y: number, z?: number) => void,
+    fn: (x: number, y: number, z?: number, radius?: number) => void,
   ) => void;
   // Pathfinding: highlight path nodes and edges
   pathNodeIds?: Set<string>;
@@ -200,10 +203,18 @@ export function GraphCanvas({
     navigateToRef.current?.(x, y);
   }, []);
 
-  // Callback to capture and expose navigation function
+  // Minimap navigation: cheap re-target only (no dolly).
   const handleNavigateToReady = useCallback(
     (fn: (x: number, y: number) => void) => {
       navigateToRef.current = fn;
+    },
+    [],
+  );
+
+  // Parent navigation: "fly in + frame" a node (accepts radius). Routed to the
+  // inspector/search/breadcrumb handle so result clicks travel to + frame the node.
+  const handleNavigateToNodeReady = useCallback(
+    (fn: (x: number, y: number, z?: number, radius?: number) => void) => {
       onNavigateForBookmarks?.(fn);
     },
     [onNavigateForBookmarks],
@@ -300,6 +311,7 @@ export function GraphCanvas({
           onCameraStateChange={setCameraState}
           onLayoutNodesChange={setLayoutNodesForMiniMap}
           onNavigateToReady={handleNavigateToReady}
+          onNavigateToNodeReady={handleNavigateToNodeReady}
           pathNodeIds={pathNodeIds}
           pathEdgeKeys={pathEdgeKeys}
           pathSourceId={pathSourceId}
@@ -344,6 +356,9 @@ interface SceneProps extends Omit<
   }) => void;
   onLayoutNodesChange?: (nodes: SimulationNode[]) => void;
   onNavigateToReady?: (fn: (x: number, y: number) => void) => void;
+  onNavigateToNodeReady?: (
+    fn: (x: number, y: number, z?: number, radius?: number) => void,
+  ) => void;
   // Pathfinding
   pathNodeIds?: Set<string>;
   pathEdgeKeys?: Set<string>;
@@ -382,6 +397,7 @@ function Scene({
   onCameraStateChange,
   onLayoutNodesChange,
   onNavigateToReady,
+  onNavigateToNodeReady,
   pathNodeIds,
   pathEdgeKeys,
   pathSourceId,
@@ -677,6 +693,57 @@ function Scene({
     [camera],
   );
 
+  // Fly the camera in and FRAME a single node: animate both the orbit target and
+  // the camera distance (preserving view direction), ~600ms ease-out-cubic. Unlike
+  // navigateToCluster (which floors the distance at 20 — far for a node ~1-2 wide),
+  // this frames close so a clicked search result feels like "traveling to that point".
+  const navigateToNode = useCallback(
+    (x: number, y: number, z = 0, radius?: number) => {
+      if (!controlsRef.current) return;
+      const controls = controlsRef.current;
+      const startTarget = controls.target.clone();
+      const endTarget = new THREE.Vector3(x, y, z);
+      const startCamPos = camera.position.clone();
+
+      const fovRad =
+        ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
+      const r = radius && radius > 0 ? radius : 2;
+      // Frame the node + a little margin; much closer floor than the cluster path.
+      const desiredDistance = Math.max(
+        8,
+        Math.min(120, (r / Math.tan(fovRad)) * 8),
+      );
+
+      const viewDir = startCamPos.clone().sub(startTarget).normalize();
+      const endCamPos = endTarget
+        .clone()
+        .add(viewDir.multiplyScalar(desiredDistance));
+
+      const startTime = performance.now();
+      const duration = 600;
+
+      const animate = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
+
+        controls.target.lerpVectors(startTarget, endTarget, eased);
+        camera.position.lerpVectors(startCamPos, endCamPos, eased);
+        controls.update();
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      };
+      requestAnimationFrame(animate);
+    },
+    [camera],
+  );
+
+  useEffect(() => {
+    onNavigateToNodeReady?.(navigateToNode);
+  }, [navigateToNode, onNavigateToNodeReady]);
+
   const handleClusterClick = useCallback(
     (cluster: Cluster) => {
       navigateToCluster(
@@ -773,21 +840,20 @@ function Scene({
     [layoutNodes],
   );
 
-  // Filter nodes based on search
-  const searchLower = searchTerm.toLowerCase();
+  // Filter nodes based on search (trimmed, so the graph spotlight, the sidebar
+  // results list, and the count badge all resolve to the exact same match set).
+  const searchLower = searchTerm.trim().toLowerCase();
   const matchingIds = useMemo(() => {
-    if (!searchTerm) return new Set<string>();
+    if (!searchLower) return new Set<string>();
     return new Set(
-      layoutNodes
-        .filter(
-          (n) =>
-            n.content.toLowerCase().includes(searchLower) ||
-            n.tags.some((t) => t.toLowerCase().includes(searchLower)) ||
-            n.type.toLowerCase().includes(searchLower),
-        )
-        .map((n) => n.id),
+      layoutNodes.filter((n) => matchesSearch(n, searchLower)).map((n) => n.id),
     );
-  }, [layoutNodes, searchLower, searchTerm]);
+  }, [layoutNodes, searchLower]);
+
+  // Spotlight is active only in the "results view": a search is running, it has
+  // matches, and NO node is selected. When a node is selected we hand the scene
+  // over to selection-focus dimming instead (one clean switch, no double-dim).
+  const spotlightActive = !selectedNode && matchingIds.size > 0;
 
   // Get connected node IDs when a node is selected
   const connectedIds = useMemo(() => {
@@ -1197,6 +1263,7 @@ function Scene({
           hoveredNode={hoveredNode}
           searchTerm={searchTerm}
           matchingIds={matchingIds}
+          spotlightActive={spotlightActive}
           connectedIds={connectedIds}
           onNodeSelect={onNodeSelect}
           onNodeHover={onNodeHover}
@@ -1526,6 +1593,7 @@ interface InstancedNodesProps {
   hoveredNode: GraphNode | null;
   searchTerm: string;
   matchingIds: Set<string>;
+  spotlightActive: boolean;
   connectedIds: Set<string>;
   onNodeSelect: (node: GraphNode | null) => void;
   onNodeHover: (node: GraphNode | null) => void;
@@ -1547,6 +1615,7 @@ function InstancedNodes({
   hoveredNode,
   searchTerm,
   matchingIds,
+  spotlightActive,
   connectedIds,
   onNodeSelect,
   onNodeHover,
@@ -1712,6 +1781,11 @@ function InstancedNodes({
   const tempPosition = useMemo(() => new THREE.Vector3(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tempScale = useMemo(() => new THREE.Vector3(), []);
+  // Reused spotlight colors (allocate once, never per-node/per-frame):
+  // a neutral slate to desaturate dimmed non-matches, and the cold "accent"
+  // near-white (--accent) to keep off-focus search matches faintly visible.
+  const dimGrey = useMemo(() => new THREE.Color("#6b7280"), []);
+  const accentColor = useMemo(() => new THREE.Color("#e8ecf4"), []);
 
   // Update instance matrices and colors each frame
   useFrame((_, delta) => {
@@ -1723,6 +1797,11 @@ function InstancedNodes({
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoveredNode?.id === node.id;
       const isSearchMatch = !!searchTerm && matchingIds.has(node.id);
+      // Detail view: a search match that isn't the selection or one of its
+      // neighbors. Keep it faintly accent-lit so results aren't lost behind the
+      // selection-focus dimming.
+      const isOffFocusMatch =
+        !!selectedNode && isSearchMatch && !connectedIds.has(node.id);
 
       // Pathfinding state
       const isPathSource = pathSourceId === node.id;
@@ -1740,8 +1819,12 @@ function InstancedNodes({
         !hasTagFilterRef.current ||
         (tagFilteredNodeIdsRef.current?.has(node.id) ?? true);
 
+      // Search dimming only applies in the results view (spotlightActive). When a
+      // node is selected, spotlightActive is false so selection-focus owns the
+      // dimming — no double-dim. When there are zero matches, spotlightActive is
+      // also false, so a non-matching search never dims the whole graph to black.
       const isDimmed = !!(
-        (searchTerm && !matchingIds.has(node.id)) ||
+        (spotlightActive && !matchingIds.has(node.id)) ||
         (hasActivePath && !isInPath) ||
         (hasTagFilterRef.current && !isMatchingTagFilter)
       );
@@ -1759,6 +1842,10 @@ function InstancedNodes({
           targetScale = Math.max(targetScale, 1.4);
         } else if (isInPath) {
           targetScale = Math.max(targetScale, 1.2);
+        }
+        // Spotlight: scale matched nodes up so they read as the focus of the view.
+        if (spotlightActive && isSearchMatch) {
+          targetScale = Math.max(targetScale, 1.3);
         }
       }
       targetScalesRef.current[i] = targetScale;
@@ -1816,6 +1903,11 @@ function InstancedNodes({
         1 + Math.sin(breathingTime + nodePhase) * breathingAmplitude;
       finalScale *= breathing;
 
+      // Keep off-focus search matches readable as markers (not specks) in detail view.
+      if (isOffFocusMatch) {
+        finalScale = Math.max(finalScale, newScale * 1.1);
+      }
+
       // Read from animated positions if available, else fall back to node coords
       const ap = animatedPositions.current;
       const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0);
@@ -1842,15 +1934,26 @@ function InstancedNodes({
       }
 
       if (isDimmed && !isInPath) {
-        tempColor.multiplyScalar(0.5);
+        if (spotlightActive && !matchingIds.has(node.id)) {
+          // Results view: push non-matches well back — desaturate toward neutral
+          // slate, then darken hard so the matched nodes own the scene.
+          tempColor.lerp(dimGrey, 0.5);
+          tempColor.multiplyScalar(0.2);
+        } else {
+          // Path / tag-filter dimming keeps its softer treatment.
+          tempColor.multiplyScalar(0.5);
+        }
       } else if (
         isSelected ||
         isHovered ||
         isSearchMatch ||
         isInPath
       ) {
-        // Brighten selected/hovered/path nodes
-        tempColor.multiplyScalar(isInPath ? 1.3 : 1.2);
+        // Brighten selected/hovered/path/match nodes. Spotlight matches get an
+        // extra push so they cross the bloom threshold and visibly glow.
+        let brightenFactor = isInPath ? 1.3 : 1.2;
+        if (spotlightActive && isSearchMatch) brightenFactor = 1.6;
+        tempColor.multiplyScalar(brightenFactor);
       } else {
         // Recent nodes glow brighter - subtle pulsing brightness
         const nodeTimestamp = node.timestamp
@@ -1872,6 +1975,12 @@ function InstancedNodes({
       // Apply focus mode opacity (but don't dim path nodes)
       if (!isInPath) {
         tempColor.multiplyScalar(focusOpacity);
+      }
+      // Detail view: lift off-focus search matches back toward the accent so they
+      // stay visible markers instead of sinking into the selection-focus dim.
+      // Applied AFTER focusOpacity so the depth-dim can't swallow them.
+      if (isOffFocusMatch) {
+        tempColor.lerp(accentColor, 0.4);
       }
       mesh.setColorAt(i, tempColor);
     });

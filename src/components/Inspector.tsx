@@ -21,6 +21,8 @@ interface InspectorProps {
   onExpand?: (payload: ExpandPayload) => void
   /** Ids currently rendered, so we can show "Expanded" when nothing is new. */
   existingNodeIds?: Set<string>
+  /** When set (a search is active), show a "← Back to results" link in the header. */
+  onBackToResults?: () => void
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -44,6 +46,7 @@ export function Inspector({
   relationshipVisibility,
   onExpand,
   existingNodeIds,
+  onBackToResults,
 }: InspectorProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editedImportance, setEditedImportance] = useState(0)
@@ -236,6 +239,14 @@ export function Inspector({
     <div className="h-full glass flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b border-white/5">
+        {onBackToResults && (
+          <button
+            onClick={onBackToResults}
+            className="mb-2 inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink-2 transition-colors"
+          >
+            ← Back to results
+          </button>
+        )}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">

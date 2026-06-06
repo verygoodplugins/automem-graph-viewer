@@ -7,6 +7,7 @@ import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
+import { SearchResultsList } from './components/SearchResultsList'
 import { SearchBar } from './components/SearchBar'
 import { TokenPrompt } from './components/TokenPrompt'
 import { StatsBar } from './components/StatsBar'
@@ -45,6 +46,7 @@ import {
   DEFAULT_RELATIONSHIP_VISIBILITY,
 } from './lib/types'
 import type { GestureState } from './hooks/useHandGestures'
+import { matchesSearch } from './lib/searchMatch'
 
 // Default gesture state for when not tracking
 const DEFAULT_GESTURE_STATE: GestureState = {
@@ -254,18 +256,31 @@ export default function App() {
 
   // Imperative camera-navigation handle, populated by GraphCanvas. Used by the
   // inspector "navigate" action, breadcrumb jumps, and the select-to-focus effect.
-  const navigateForBookmarksRef = useRef<((x: number, y: number, z?: number) => void) | null>(null)
+  const navigateForBookmarksRef = useRef<
+    ((x: number, y: number, z?: number, radius?: number) => void) | null
+  >(null)
   const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
 
+  // Open the sidebar for a selected node OR an active search; collapse otherwise.
+  // This effect is the SINGLE navigator on selection — it flies + frames the node
+  // (passing its radius). Every selection path funnels through here, so we don't
+  // fire a competing camera animation elsewhere.
   useEffect(() => {
-    if (selectedNode) {
+    if (selectedNode || searchTerm.trim()) {
       inspectorPanelRef.current?.expand()
-      navigateForBookmarksRef.current?.(selectedNode.x ?? 0, selectedNode.y ?? 0, selectedNode.z ?? 0)
     } else {
       inspectorPanelRef.current?.collapse()
     }
-  }, [selectedNode])
+    if (selectedNode) {
+      navigateForBookmarksRef.current?.(
+        selectedNode.x ?? 0,
+        selectedNode.y ?? 0,
+        selectedNode.z ?? 0,
+        selectedNode.radius,
+      )
+    }
+  }, [selectedNode, searchTerm])
 
   const handleGestureStateChange = useCallback((state: GestureState) => {
     setGestureState(state)
@@ -386,13 +401,8 @@ export default function App() {
     }
     // Apply search filter
     if (searchTerm.trim()) {
-      const lower = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (n) =>
-          n.content.toLowerCase().includes(lower) ||
-          n.type.toLowerCase().includes(lower) ||
-          n.tags.some((t) => t.toLowerCase().includes(lower))
-      )
+      const lower = searchTerm.trim().toLowerCase()
+      filtered = filtered.filter((n) => matchesSearch(n, lower))
     }
     return filtered.length
   }, [nodes, tagCloud.hasActiveFilter, tagCloud.filteredNodeIds, searchTerm, filterChips.hasActiveFilters])
@@ -462,15 +472,11 @@ export default function App() {
 
   const handleInspectorNavigate = useCallback((node: GraphNode | null) => {
     if (!node) return
-
-    // Preserve path-selection behavior handled in handleNodeSelect.
+    // handleNodeSelect sets selectedNode; the select-to-focus effect then flies +
+    // frames the node (with its radius). Path-selection is handled inside
+    // handleNodeSelect (it returns early without selecting), so no camera move there.
     handleNodeSelect(node)
-
-    // Keep camera navigation for normal inspector navigation.
-    if (!pathfinding.isSelectingTarget) {
-      navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
-    }
-  }, [handleNodeSelect, pathfinding.isSelectingTarget])
+  }, [handleNodeSelect])
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
@@ -483,6 +489,9 @@ export default function App() {
     // Play search sound on typing (only if term changed and is not empty)
     if (term.length > 0) {
       sound.playSearch()
+      // Starting/changing a search shows the results list — clear any open node so
+      // the sidebar switches from single-node detail back to the results view.
+      setSelectedNode(null)
     }
     setSearchTerm(term)
   }, [sound.playSearch])
@@ -578,8 +587,8 @@ export default function App() {
   nodesRef.current = nodes
 
   const breadcrumbNavigate = useCallback((node: GraphNode) => {
+    // The select-to-focus effect flies + frames the node once selectedNode is set.
     setSelectedNode(node)
-    navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
   }, [])
 
   const handleBreadcrumbBack = useCallback(() => {
@@ -931,19 +940,34 @@ export default function App() {
             onExpand={() => setIsInspectorOpen(true)}
             onCollapse={() => setIsInspectorOpen(false)}
           >
-            <Inspector
-              key={selectedNode?.id ?? 'none'}
-              node={selectedNode}
-              onClose={() => setSelectedNode(null)}
-              onNavigate={handleInspectorNavigate}
-              onStartPathfinding={pathfinding.startPathSelection}
-              isPathSelecting={pathfinding.isSelectingTarget}
-              onTagClick={handleInspectorTagClick}
-              onRelationshipTypeClick={handleRelationshipTypeClick}
-              relationshipVisibility={relationshipVisibility}
-              onExpand={graph.expand}
-              existingNodeIds={visibleNodeIds}
-            />
+            {/* Sidebar view derived from (selectedNode, searchTerm):
+                 selected node → detail; else active search → results list; else empty. */}
+            {!selectedNode && searchTerm.trim() ? (
+              <SearchResultsList
+                nodes={nodes}
+                searchTerm={searchTerm}
+                onSelect={handleNodeSelect}
+              />
+            ) : (
+              <Inspector
+                key={selectedNode?.id ?? 'none'}
+                node={selectedNode}
+                onClose={() => setSelectedNode(null)}
+                onNavigate={handleInspectorNavigate}
+                onBackToResults={
+                  selectedNode && searchTerm.trim()
+                    ? () => setSelectedNode(null)
+                    : undefined
+                }
+                onStartPathfinding={pathfinding.startPathSelection}
+                isPathSelecting={pathfinding.isSelectingTarget}
+                onTagClick={handleInspectorTagClick}
+                onRelationshipTypeClick={handleRelationshipTypeClick}
+                relationshipVisibility={relationshipVisibility}
+                onExpand={graph.expand}
+                existingNodeIds={visibleNodeIds}
+              />
+            )}
           </Panel>
         </PanelGroup>
 
