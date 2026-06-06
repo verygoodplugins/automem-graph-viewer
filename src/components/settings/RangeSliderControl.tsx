@@ -22,8 +22,8 @@ export function RangeSliderControl({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <label className="text-xs text-slate-400">{label}</label>
-        <span className="text-xs text-slate-500 font-mono">
+        <label className="text-xs text-ink-3">{label}</label>
+        <span className="text-xs text-ink-3 font-mono">
           {formatValue(value[0])} – {formatValue(value[1])}
         </span>
       </div>
@@ -36,14 +36,14 @@ export function RangeSliderControl({
         onValueChange={(v) => onChange(v as [number, number])}
       >
         <Slider.Track className="relative h-1.5 w-full grow rounded-full bg-white/10">
-          <Slider.Range className="absolute h-full rounded-full bg-blue-500/60" />
+          <Slider.Range className="absolute h-full rounded-full bg-white/40" />
         </Slider.Track>
         <Slider.Thumb
-          className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+          className="block w-4 h-4 rounded-full bg-accent cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
           aria-label="Minimum importance"
         />
         <Slider.Thumb
-          className="block w-4 h-4 rounded-full bg-blue-500 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+          className="block w-4 h-4 rounded-full bg-accent cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-accent"
           aria-label="Maximum importance"
         />
       </Slider.Root>

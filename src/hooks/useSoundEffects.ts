@@ -20,13 +20,11 @@ export interface UseSoundEffectsReturn {
   playZoomIn: () => void
   playZoomOut: () => void
   playSearch: () => void
-  playBookmark: () => void
   playDelete: () => void
   playError: () => void
   playSuccess: () => void
   playPathFound: () => void
   playTimeTravel: () => void
-  playLasso: () => void
 }
 
 export function useSoundEffects(): UseSoundEffectsReturn {
@@ -73,10 +71,6 @@ export function useSoundEffects(): UseSoundEffectsReturn {
     soundManager.playSearch()
   }, [])
 
-  const playBookmark = useCallback(() => {
-    soundManager.playBookmark()
-  }, [])
-
   const playDelete = useCallback(() => {
     soundManager.playDelete()
   }, [])
@@ -97,10 +91,6 @@ export function useSoundEffects(): UseSoundEffectsReturn {
     soundManager.playTimeTravel()
   }, [])
 
-  const playLasso = useCallback(() => {
-    soundManager.playLasso()
-  }, [])
-
   return {
     settings,
     setMasterVolume,
@@ -111,12 +101,10 @@ export function useSoundEffects(): UseSoundEffectsReturn {
     playZoomIn,
     playZoomOut,
     playSearch,
-    playBookmark,
     playDelete,
     playError,
     playSuccess,
     playPathFound,
     playTimeTravel,
-    playLasso,
   }
 }

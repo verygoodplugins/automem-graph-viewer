@@ -9,7 +9,6 @@
  * - Node hover: Whisper-quiet high tone
  * - Zoom: Gentle whoosh (pitch direction matches zoom direction)
  * - Search: Soft keyboard click
- * - Bookmark save: Camera shutter sound
  * - Delete: Low thud with decay
  * - Error: Gentle dissonant tone
  * - Success: Ascending chime
@@ -21,13 +20,11 @@ type SoundType =
   | 'zoomIn'
   | 'zoomOut'
   | 'search'
-  | 'bookmark'
   | 'delete'
   | 'error'
   | 'success'
   | 'pathFound'
   | 'timeTravel'
-  | 'lasso'
 
 interface SoundSettings {
   masterVolume: number // 0-1
@@ -44,13 +41,11 @@ const DEFAULT_SETTINGS: SoundSettings = {
     zoomIn: true,
     zoomOut: true,
     search: true,
-    bookmark: true,
     delete: true,
     error: true,
     success: true,
     pathFound: true,
     timeTravel: true,
-    lasso: true,
   },
 }
 
@@ -295,51 +290,6 @@ class SoundManager {
   }
 
   /**
-   * Bookmark save - camera shutter
-   */
-  playBookmark() {
-    if (!this.canPlay('bookmark')) return
-
-    const ctx = this.getContext()
-    if (!ctx) return
-
-    const now = ctx.currentTime
-    const volume = this.getVolume() * 0.2
-
-    // First click
-    const click1Size = ctx.sampleRate * 0.015
-    const click1 = ctx.createBuffer(1, click1Size, ctx.sampleRate)
-    const click1Data = click1.getChannelData(0)
-    for (let i = 0; i < click1Size; i++) {
-      const env = Math.exp(-i / (ctx.sampleRate * 0.003))
-      click1Data[i] = (Math.random() * 2 - 1) * env
-    }
-
-    // Second click (slightly delayed)
-    const click2Size = ctx.sampleRate * 0.012
-    const click2 = ctx.createBuffer(1, click2Size, ctx.sampleRate)
-    const click2Data = click2.getChannelData(0)
-    for (let i = 0; i < click2Size; i++) {
-      const env = Math.exp(-i / (ctx.sampleRate * 0.004))
-      click2Data[i] = (Math.random() * 2 - 1) * env
-    }
-
-    const source1 = ctx.createBufferSource()
-    source1.buffer = click1
-    const source2 = ctx.createBufferSource()
-    source2.buffer = click2
-
-    const gain = ctx.createGain()
-    gain.gain.value = volume
-
-    source1.connect(gain).connect(ctx.destination)
-    source2.connect(gain)
-
-    source1.start(now)
-    source2.start(now + 0.05)
-  }
-
-  /**
    * Delete - low thud
    */
   playDelete() {
@@ -533,34 +483,6 @@ class SoundManager {
 
     source.connect(filter).connect(gain).connect(ctx.destination)
     source.start(now)
-  }
-
-  /**
-   * Lasso selection complete
-   */
-  playLasso() {
-    if (!this.canPlay('lasso')) return
-
-    const ctx = this.getContext()
-    if (!ctx) return
-
-    const now = ctx.currentTime
-    const volume = this.getVolume() * 0.15
-
-    // Quick ascending sweep
-    const osc = ctx.createOscillator()
-    osc.type = 'triangle'
-    osc.frequency.setValueAtTime(300, now)
-    osc.frequency.exponentialRampToValueAtTime(600, now + 0.1)
-
-    const gain = ctx.createGain()
-    gain.gain.setValueAtTime(0, now)
-    gain.gain.linearRampToValueAtTime(volume, now + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15)
-
-    osc.connect(gain).connect(ctx.destination)
-    osc.start(now)
-    osc.stop(now + 0.2)
   }
 }
 

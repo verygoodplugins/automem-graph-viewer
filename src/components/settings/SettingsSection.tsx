@@ -16,9 +16,9 @@ export function SettingsSection({ title, defaultOpen = true, children }: Setting
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
       >
-        <span className="text-sm font-medium text-slate-300">{title}</span>
+        <span className="font-display text-sm font-medium text-ink-2">{title}</span>
         <ChevronDown
-          className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
+          className={`w-4 h-4 text-ink-3 transition-transform duration-200 ${
             isOpen ? 'rotate-0' : '-rotate-90'
           }`}
         />

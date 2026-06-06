@@ -3,6 +3,7 @@ import { Keyboard, Settings } from 'lucide-react'
 
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useGraphSnapshot } from './hooks/useGraphData'
+import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
@@ -14,12 +15,8 @@ import { GestureDebugOverlay } from './components/GestureDebugOverlay'
 import { Hand2DOverlay } from './components/Hand2DOverlay'
 import { HandControlOverlay } from './components/HandControlOverlay'
 import { SettingsPanel } from './components/settings'
-import { BookmarksPanel } from './components/BookmarksPanel'
 import { PathfindingOverlay } from './components/PathfindingOverlay'
 import { TimelineBar } from './components/TimelineBar'
-import { RadialMenu } from './components/RadialMenu'
-import { LassoOverlay } from './components/LassoOverlay'
-import { SelectionActions } from './components/SelectionActions'
 import { TagCloud } from './components/TagCloud'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
 import { useHandLockAndGrab } from './hooks/useHandLockAndGrab'
@@ -29,7 +26,6 @@ import { useTagCloud } from './hooks/useTagCloud'
 import { useFilterChips } from './hooks/useFilterChips'
 import { useBreadcrumbs } from './hooks/useBreadcrumbs'
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation'
-import { useBookmarks, type Bookmark } from './hooks/useBookmarks'
 import { usePathfinding } from './hooks/usePathfinding'
 import { useTimeTravel } from './hooks/useTimeTravel'
 import { useSoundEffects } from './hooks/useSoundEffects'
@@ -135,29 +131,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const statusTimeoutRef = useRef<number | null>(null)
 
-  // Radial menu state
-  const [radialMenuState, setRadialMenuState] = useState<{
-    isOpen: boolean
-    node: GraphNode | null
-    position: { x: number; y: number }
-  }>({
-    isOpen: false,
-    node: null,
-    position: { x: 0, y: 0 },
-  })
-
-  // Lasso selection state
-  const [lassoState, setLassoState] = useState<{
-    isDrawing: boolean
-    points: { x: number; y: number }[]
-    selectedIds: Set<string>
-  }>({
-    isDrawing: false,
-    points: [],
-    selectedIds: new Set(),
-  })
   const canvasContainerRef = useRef<HTMLDivElement>(null)
-  const getNodesInPolygonRef = useRef<((polygon: { x: number; y: number }[]) => string[]) | null>(null)
 
   // Tag cloud state
   const [tagCloudVisible, setTagCloudVisible] = useState(false)
@@ -278,17 +252,8 @@ export default function App() {
   // Reset view callback - will be set by GraphCanvas
   const [resetViewFn, setResetViewFn] = useState<(() => void) | null>(null)
 
-  // Bookmarks
-  const {
-    bookmarks,
-    addBookmark,
-    updateBookmark,
-    deleteBookmark,
-    getBookmarkByIndex,
-  } = useBookmarks()
-
-  // Camera state and navigation for bookmarks
-  const [cameraStateForBookmarks, setCameraStateForBookmarks] = useState({ x: 0, y: 0, z: 150, zoom: 1 })
+  // Imperative camera-navigation handle, populated by GraphCanvas. Used by the
+  // inspector "navigate" action, breadcrumb jumps, and the select-to-focus effect.
   const navigateForBookmarksRef = useRef<((x: number, y: number, z?: number) => void) | null>(null)
   const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
@@ -319,9 +284,17 @@ export default function App() {
     enabled: isAuthenticated,
   })
 
-  // Stable data references - use EMPTY constants when data not loaded
-  const rawNodes = data?.nodes ?? EMPTY_NODES
-  const edges = data?.edges ?? EMPTY_EDGES
+  // The live, growing graph: seeded/reset from the immutable snapshot, grown by
+  // expanding a node's neighborhood. This is the source of truth for what renders.
+  const graph = useExpandableGraph(data)
+
+  // Stable data references. Once the snapshot has seeded the expandable graph,
+  // read from it (so expansions are visible); fall back to the raw snapshot for
+  // the one render between data arriving and the reset effect firing (identical
+  // ids/order → no realloc, seamless handoff), and to EMPTY constants before load.
+  const hasGraph = graph.nodes.length > 0
+  const rawNodes = hasGraph ? graph.nodes : (data?.nodes ?? EMPTY_NODES)
+  const edges = hasGraph ? graph.edges : (data?.edges ?? EMPTY_EDGES)
 
   // Apply archive threshold default on first successful load
   useEffect(() => {
@@ -348,6 +321,22 @@ export default function App() {
     if (maxImportance >= 1) return rawNodes
     return rawNodes.filter(n => n.importance <= maxImportance)
   }, [rawNodes, filters.importanceRange])
+
+  // Build a set of visible node IDs for fast edge membership checks
+  const visibleNodeIds = useMemo(() => new Set(nodes.map(n => n.id)), [nodes])
+
+  // Filter edges to only include those where BOTH endpoints are in the visible set.
+  // The API can return edges referencing nodes outside the current snapshot (e.g. when
+  // sampling limits the node count, or when the importance filter trims endpoints).
+  // Dangling edges cause nodes to appear orphaned (no visible connections) even though
+  // they have relationships — fixing this makes connected nodes always show their edges.
+  const filteredEdges = useMemo(() => {
+    if (edges === EMPTY_EDGES || visibleNodeIds.size === 0) return EMPTY_EDGES
+    const filtered = edges.filter(
+      e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+    )
+    return filtered.length === edges.length ? edges : filtered
+  }, [edges, visibleNodeIds])
 
   // Tag Cloud
   const tagCloud = useTagCloud({
@@ -414,7 +403,7 @@ export default function App() {
   // Pathfinding
   const pathfinding = usePathfinding({
     nodes: nodes as any,
-    edges,
+    edges: filteredEdges,
   })
 
   // Time Travel
@@ -456,41 +445,6 @@ export default function App() {
     }, 1800)
   }, [])
 
-  // Bookmark handlers (must be after data is defined)
-  const handleSaveBookmark = useCallback(() => {
-    addBookmark(
-      { x: cameraStateForBookmarks.x, y: cameraStateForBookmarks.y, z: cameraStateForBookmarks.z },
-      cameraStateForBookmarks.zoom,
-      selectedNode?.id
-    )
-    sound.playBookmark()
-    showStatus('Bookmark saved')
-  }, [addBookmark, cameraStateForBookmarks, selectedNode, sound.playBookmark, showStatus])
-
-  const handleNavigateToBookmark = useCallback((bookmark: Bookmark) => {
-    navigateForBookmarksRef.current?.(bookmark.position.x, bookmark.position.y)
-    // If bookmark has a selected node, select it
-    if (bookmark.selectedNodeId && nodes.length > 0) {
-      const node = nodes.find(n => n.id === bookmark.selectedNodeId)
-      if (node) {
-        setSelectedNode(node)
-      }
-    }
-    showStatus(`Jumped to ${bookmark.name}`)
-  }, [nodes, showStatus])
-
-  const handleRenameBookmark = useCallback((id: string, name: string) => {
-    updateBookmark(id, { name })
-  }, [updateBookmark])
-
-  // Quick navigate to bookmark by number (1-9)
-  const handleQuickNavigate = useCallback((index: number) => {
-    const bookmark = getBookmarkByIndex(index)
-    if (bookmark) {
-      handleNavigateToBookmark(bookmark)
-    }
-  }, [getBookmarkByIndex, handleNavigateToBookmark])
-
   const { push: breadcrumbPush } = breadcrumbs
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
     // If we're in path selection mode and a node is clicked, complete the path
@@ -524,102 +478,6 @@ export default function App() {
     }
     setHoveredNode(node)
   }, [sound.playHover])
-
-  // Radial menu handlers
-  const handleNodeContextMenu = useCallback((node: GraphNode, screenPosition: { x: number; y: number }) => {
-    setRadialMenuState({
-      isOpen: true,
-      node,
-      position: screenPosition,
-    })
-    setSelectedNode(node) // Also select the node
-  }, [])
-
-  const handleCloseRadialMenu = useCallback(() => {
-    setRadialMenuState(prev => ({
-      ...prev,
-      isOpen: false,
-    }))
-  }, [])
-
-  const handleCopyNodeId = useCallback((_nodeId: string) => {
-    showStatus('Node ID copied to clipboard')
-  }, [showStatus])
-
-  const handleViewNodeContent = useCallback((node: GraphNode) => {
-    // Select the node to show in inspector
-    setSelectedNode(node)
-  }, [])
-
-  // Lasso selection handlers
-  const handleLassoStart = useCallback((x: number, y: number) => {
-    setLassoState(prev => ({
-      ...prev,
-      isDrawing: true,
-      points: [{ x, y }],
-    }))
-  }, [])
-
-  const handleLassoMove = useCallback((x: number, y: number) => {
-    setLassoState(prev => {
-      if (!prev.isDrawing) return prev
-      // Only add point if moved enough to avoid too many points
-      const lastPoint = prev.points[prev.points.length - 1]
-      if (lastPoint) {
-        const dist = Math.sqrt(Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2))
-        if (dist < 3) return prev
-      }
-      return {
-        ...prev,
-        points: [...prev.points, { x, y }],
-      }
-    })
-  }, [])
-
-  const handleLassoEnd = useCallback(() => {
-    setLassoState(prev => {
-      if (!prev.isDrawing || prev.points.length < 3) {
-        return { ...prev, isDrawing: false, points: [] }
-      }
-
-      // Call GraphCanvas to find nodes in the polygon
-      const nodesInPolygon = getNodesInPolygonRef.current?.(prev.points) ?? []
-      const newSelectedIds = new Set(prev.selectedIds)
-      nodesInPolygon.forEach(id => newSelectedIds.add(id))
-
-      // Play lasso sound if nodes were selected
-      if (nodesInPolygon.length > 0) {
-        sound.playLasso()
-      }
-
-      return {
-        isDrawing: false,
-        points: [],
-        selectedIds: newSelectedIds,
-      }
-    })
-  }, [sound.playLasso])
-
-  const handleLassoCancel = useCallback(() => {
-    setLassoState(prev => ({
-      ...prev,
-      isDrawing: false,
-      points: [],
-    }))
-  }, [])
-
-  const handleClearLassoSelection = useCallback(() => {
-    setLassoState(prev => ({
-      ...prev,
-      selectedIds: new Set(),
-    }))
-  }, [])
-
-  // Get selected nodes from lasso
-  const lassoSelectedNodes = useMemo(() => {
-    if (nodes.length === 0 || lassoState.selectedIds.size === 0) return []
-    return nodes.filter(n => lassoState.selectedIds.has(n.id))
-  }, [nodes, lassoState.selectedIds])
 
   const handleSearch = useCallback((term: string) => {
     // Play search sound on typing (only if term changed and is not empty)
@@ -695,8 +553,6 @@ export default function App() {
     onReheat: handleReheat,
     onToggleSettings: () => setSettingsPanelOpen(prev => !prev),
     onToggleLabels: handleToggleLabels,
-    onSaveBookmark: handleSaveBookmark,
-    onQuickNavigate: handleQuickNavigate,
     onStartPathfinding: handleStartPathfindingFromKeyboard,
     onCancelPathfinding: pathfinding.cancelPathSelection,
     onShowHelp: () => setShortcutsHelpOpen(true),
@@ -770,14 +626,22 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#0a0a0f] text-slate-100 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen text-ink flex flex-col overflow-hidden">
+      {/* Atmosphere — fixed gradient-mesh + contour grid + grain behind the
+          transparent WebGL canvas and translucent glass rails (zero GPU cost).
+          NOTE: this root div deliberately carries NO bg-* — an opaque full-bleed
+          background here paints at stacking step 3 (in-flow block bg) and would
+          occlude the z-index:-1 atmosphere at step 2. The base color sits on
+          <html> (index.html); the atmosphere supplies the rest. */}
+      <div className="atmosphere" aria-hidden="true" />
+
       {/* Top Bar */}
-      <header className="h-14 flex-shrink-0 glass border-b border-white/5 flex items-center px-4 gap-4 z-50 overflow-x-auto overflow-y-hidden">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <span className="text-white font-bold text-sm">AM</span>
-          </div>
-          <h1 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+      <header className="reveal h-14 flex-shrink-0 glass border-b border-hairline flex items-center px-4 gap-4 z-50 overflow-x-auto overflow-y-hidden">
+        <div className="flex items-center gap-2.5 pr-1 select-none">
+          <span className="text-accent text-lg leading-none drop-shadow-[0_0_8px_var(--accent-glow)]" aria-hidden>
+            ✦
+          </span>
+          <h1 className="font-display text-[1.15rem] font-medium tracking-tight text-ink">
             AutoMem
           </h1>
         </div>
@@ -805,36 +669,34 @@ export default function App() {
         <button
           onClick={() => setPerformanceMode(!performanceMode)}
           className={`
-            flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+            inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
             ${performanceMode
-              ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-yellow-500/25'
-              : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+              ? 'bg-surface-2 text-accent shadow-elev-focus'
+              : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
             }
           `}
-          title={performanceMode ? 'Disable performance mode (enable effects)' : 'Enable performance mode (disable bloom/vignette for faster rendering)'}
+          title={performanceMode ? 'Performance mode ON — click to enable effects' : 'Performance mode — disable bloom/vignette for faster rendering'}
+          aria-label="Toggle performance mode"
+          aria-pressed={performanceMode}
         >
           <BoltIcon className="w-5 h-5" />
-          <span className="text-sm font-medium hidden sm:inline">
-            {performanceMode ? 'Perf ON' : 'Perf'}
-          </span>
         </button>
 
         {/* Gesture controls */}
         <button
           onClick={() => setGestureControlEnabled(!gestureControlEnabled)}
             className={`
-              flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+              inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
               ${gestureControlEnabled
-                ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white shadow-lg shadow-cyan-500/25'
-                : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                ? 'bg-surface-2 text-accent shadow-elev-focus'
+                : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
               }
             `}
-            title={gestureControlEnabled ? 'Disable hand gestures' : 'Enable hand gestures (requires camera)'}
+            title={gestureControlEnabled ? 'Hand gestures ON — click to disable' : 'Enable hand gestures (requires camera)'}
+            aria-label="Toggle hand gestures"
+            aria-pressed={gestureControlEnabled}
           >
             <HandIcon className="w-5 h-5" />
-            <span className="text-sm font-medium hidden sm:inline">
-              {gestureControlEnabled ? 'Gestures ON' : 'Gestures'}
-            </span>
         </button>
 
         {/* Debug Overlay Toggle (only show when gestures are enabled) */}
@@ -842,18 +704,17 @@ export default function App() {
           <button
             onClick={() => setDebugOverlayVisible(!debugOverlayVisible)}
             className={`
-              flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+              inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
               ${debugOverlayVisible
-                ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/25'
-                : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                ? 'bg-surface-2 text-accent shadow-elev-focus'
+                : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
               }
             `}
-            title={debugOverlayVisible ? 'Hide debug overlay' : 'Show gesture debug overlay'}
+            title={debugOverlayVisible ? 'Hide gesture debug overlay' : 'Show gesture debug overlay'}
+            aria-label="Toggle gesture debug overlay"
+            aria-pressed={debugOverlayVisible}
           >
             <BugIcon className="w-5 h-5" />
-            <span className="text-sm font-medium hidden sm:inline">
-              {debugOverlayVisible ? 'Debug ON' : 'Debug'}
-            </span>
           </button>
         )}
 
@@ -884,32 +745,33 @@ export default function App() {
           </div>
         )}
 
+        {/* Divider — separates interaction/dev toggles from utility actions */}
+        <div className="w-px h-5 bg-hairline flex-shrink-0" aria-hidden="true" />
+
         <button
           onClick={() => setShortcutsHelpOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all duration-200"
+          className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink transition-all duration-200"
           title="Keyboard shortcuts (?)"
           aria-label="Open keyboard shortcuts help"
         >
           <Keyboard className="w-5 h-5" />
-          <span className="text-sm font-medium hidden xl:inline">Shortcuts</span>
         </button>
 
         {/* Settings Panel Toggle */}
         <button
           onClick={() => setSettingsPanelOpen(!settingsPanelOpen)}
           className={`
-            flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200
+            inline-flex items-center justify-center h-9 w-9 rounded-lg transition-all duration-200
             ${settingsPanelOpen
-              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/25'
-              : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+              ? 'bg-surface-2 text-accent shadow-elev-focus'
+              : 'bg-white/5 hover:bg-white/10 text-ink-3 hover:text-ink'
             }
           `}
           title={settingsPanelOpen ? 'Hide settings' : 'Show graph settings'}
+          aria-label="Toggle settings panel"
+          aria-pressed={settingsPanelOpen}
         >
           <Settings className="w-5 h-5" />
-          <span className="text-sm font-medium hidden sm:inline">
-            Settings
-          </span>
         </button>
       </header>
 
@@ -926,7 +788,7 @@ export default function App() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="reveal flex-1 flex overflow-hidden" style={{ animationDelay: '90ms' }}>
         <PanelGroup direction="horizontal" className="flex-1">
           {/* Graph Canvas */}
           <Panel defaultSize={75} minSize={40}>
@@ -934,8 +796,8 @@ export default function App() {
               {isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                   <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                    <span className="text-slate-400">Loading memories...</span>
+                    <div className="w-12 h-12 border-4 border-white/10 border-t-accent rounded-full animate-spin" />
+                    <span className="text-ink-3">Loading memories...</span>
                   </div>
                 </div>
               )}
@@ -943,11 +805,11 @@ export default function App() {
               {error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                   <div className="glass p-6 rounded-xl max-w-md text-center">
-                    <div className="text-red-400 text-lg mb-2">Connection Error</div>
-                    <div className="text-slate-400 text-sm mb-4">{(error as Error).message}</div>
+                    <div className="text-danger text-lg mb-2">Connection Error</div>
+                    <div className="text-ink-3 text-sm mb-4">{(error as Error).message}</div>
                     <button
                       onClick={() => refetch()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+                      className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg transition-colors"
                     >
                       Retry
                     </button>
@@ -957,13 +819,12 @@ export default function App() {
 
               <GraphCanvas
                 nodes={nodes}
-                edges={edges}
+                edges={filteredEdges}
                 selectedNode={selectedNode}
                 hoveredNode={hoveredNode}
                 searchTerm={searchTerm}
                 onNodeSelect={handleNodeSelect}
                 onNodeHover={handleNodeHover}
-                onNodeContextMenu={handleNodeContextMenu}
                 gestureControlEnabled={gestureControlEnabled}
                 trackingSource={trackingSource}
                 onGestureStateChange={handleGestureStateChange}
@@ -974,9 +835,9 @@ export default function App() {
                 clusterConfig={clusterConfig}
                 relationshipVisibility={relationshipVisibility}
                 typeColors={data?.meta?.type_colors}
+                expansionAnchors={graph.expansionAnchors}
                 onReheatReady={setReheatFn}
                 onResetViewReady={setResetViewFn}
-                onCameraStateForBookmarks={setCameraStateForBookmarks}
                 onNavigateForBookmarks={(fn) => { navigateForBookmarksRef.current = fn }}
                 pathNodeIds={pathfinding.pathNodeIds}
                 pathEdgeKeys={pathfinding.pathEdgeKeys}
@@ -985,8 +846,6 @@ export default function App() {
                 isPathSelecting={pathfinding.isSelectingTarget}
                 timeTravelActive={timeTravel.isActive}
                 timeTravelVisibleNodes={timeTravel.visibleNodes}
-                onGetNodesInPolygon={(fn) => { getNodesInPolygonRef.current = fn }}
-                lassoSelectedIds={lassoState.selectedIds}
                 tagFilteredNodeIds={tagCloud.filteredNodeIds}
                 hasTagFilter={tagCloud.hasActiveFilter}
               />
@@ -1017,17 +876,6 @@ export default function App() {
                 phoneConnected={trackingInfo.phoneConnected}
                 bridgeIps={trackingInfo.bridgeIps}
                 phonePort={trackingInfo.phonePort}
-              />
-
-              {/* Bookmarks Panel */}
-              <BookmarksPanel
-                bookmarks={bookmarks}
-                onNavigate={handleNavigateToBookmark}
-                onDelete={deleteBookmark}
-                onRename={handleRenameBookmark}
-                onSaveBookmark={handleSaveBookmark}
-                modifierLabel={keyboardModifierLabel}
-                visible={true}
               />
 
               {/* Pathfinding Overlay */}
@@ -1066,28 +914,11 @@ export default function App() {
                 onGoToEnd={timeTravel.goToEnd}
               />
 
-              {/* Lasso Selection Overlay */}
-              <LassoOverlay
-                isDrawing={lassoState.isDrawing}
-                points={lassoState.points}
-                selectedCount={lassoState.selectedIds.size}
-                onStartDraw={handleLassoStart}
-                onMoveDraw={handleLassoMove}
-                onEndDraw={handleLassoEnd}
-                onCancelDraw={handleLassoCancel}
-              />
-
-              {/* Selection Actions (bulk operations) */}
-              <SelectionActions
-                selectedNodes={lassoSelectedNodes}
-                allEdges={edges}
-                onClearSelection={handleClearLassoSelection}
-              />
             </div>
           </Panel>
 
           {/* Resize Handle */}
-          <PanelResizeHandle className={`w-1 bg-white/5 hover:bg-blue-500/50 transition-colors cursor-col-resize ${!isInspectorOpen ? 'opacity-0 pointer-events-none' : ''}`} />
+          <PanelResizeHandle className={`w-1 bg-white/5 hover:bg-white/20 transition-colors cursor-col-resize ${!isInspectorOpen ? 'opacity-0 pointer-events-none' : ''}`} />
 
           {/* Inspector Panel */}
           <Panel
@@ -1110,6 +941,8 @@ export default function App() {
               onTagClick={handleInspectorTagClick}
               onRelationshipTypeClick={handleRelationshipTypeClick}
               relationshipVisibility={relationshipVisibility}
+              onExpand={graph.expand}
+              existingNodeIds={visibleNodeIds}
             />
           </Panel>
         </PanelGroup>
@@ -1137,18 +970,6 @@ export default function App() {
           onSoundVolumeChange={sound.setMasterVolume}
         />
       </div>
-
-      {/* Radial Menu (context menu for nodes) */}
-      {radialMenuState.isOpen && radialMenuState.node && (
-        <RadialMenu
-          node={radialMenuState.node}
-          position={radialMenuState.position}
-          onClose={handleCloseRadialMenu}
-          onStartPath={pathfinding.startPathSelection}
-          onViewContent={handleViewNodeContent}
-          onCopyId={handleCopyNodeId}
-        />
-      )}
 
       {/* Tag Cloud (press 'T' to toggle) */}
       <TagCloud
@@ -1180,7 +1001,7 @@ export default function App() {
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className="fixed bottom-5 right-5 z-[95] rounded-lg border border-blue-400/20 bg-slate-900/95 px-3 py-2 text-sm text-slate-100 shadow-xl"
+          className="fixed bottom-5 right-5 z-[95] rounded-lg border border-hairline bg-surface-1 px-3 py-2 text-sm text-ink shadow-xl"
         >
           {statusMessage}
         </div>

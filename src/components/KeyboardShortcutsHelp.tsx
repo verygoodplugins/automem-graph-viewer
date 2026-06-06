@@ -46,15 +46,15 @@ export function KeyboardShortcutsHelp({
         }
       }}
     >
-      <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-[#10121a] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <div className="flex items-center gap-2 text-slate-200">
-            <Keyboard className="h-4 w-4 text-blue-400" />
-            <h2 id="keyboard-shortcuts-title" className="text-sm font-semibold">Keyboard Shortcuts</h2>
+      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-hairline bg-surface-1 shadow-elev-2">
+        <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <div className="flex items-center gap-2 text-ink-2">
+            <Keyboard className="h-4 w-4 text-accent" />
+            <h2 id="keyboard-shortcuts-title" className="font-display text-sm font-semibold">Keyboard Shortcuts</h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-lg p-2 text-ink-3 transition-colors hover:bg-white/10 hover:text-ink"
             aria-label="Close keyboard shortcuts"
           >
             <X className="h-4 w-4" />
@@ -68,17 +68,16 @@ export function KeyboardShortcutsHelp({
                 key={shortcut.key}
                 className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2"
               >
-                <span className="text-sm text-slate-300">{shortcut.description}</span>
-                <kbd className="rounded border border-white/15 bg-black/30 px-2 py-0.5 font-mono text-xs text-slate-200">
+                <span className="text-sm text-ink-2">{shortcut.description}</span>
+                <kbd className="rounded border border-white/15 bg-black/30 px-2 py-0.5 font-mono text-xs text-ink-2">
                   {shortcut.key.replace(/Cmd/g, modifierLabel)}
                 </kbd>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs text-slate-400">
-            Additional controls: hold <kbd className="font-mono text-slate-300">Shift</kbd> and drag to lasso,
-            press <kbd className="font-mono text-slate-300">T</kbd> for tag cloud.
+          <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-xs text-ink-3">
+            Additional controls: press <kbd className="font-mono text-ink-2">T</kbd> for tag cloud.
           </div>
         </div>
       </div>

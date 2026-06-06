@@ -106,10 +106,6 @@ interface GraphCanvasProps {
   searchTerm: string;
   onNodeSelect: (node: GraphNode | null) => void;
   onNodeHover: (node: GraphNode | null) => void;
-  onNodeContextMenu?: (
-    node: GraphNode,
-    screenPosition: { x: number; y: number },
-  ) => void;
   gestureControlEnabled?: boolean;
   trackingSource?: "mediapipe" | "iphone";
   onGestureStateChange?: (state: GestureState) => void;
@@ -128,15 +124,12 @@ interface GraphCanvasProps {
   clusterConfig?: ClusterConfig;
   relationshipVisibility?: RelationshipVisibility;
   typeColors?: Record<string, string>;
+  // Expansion: seed newly-merged nodes next to the node the user expanded from.
+  expansionAnchors?: Map<string, string>;
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
-  // Bookmarks: expose camera state and navigation to parent
-  onCameraStateForBookmarks?: (state: {
-    x: number;
-    y: number;
-    z: number;
-    zoom: number;
-  }) => void;
+  // Expose an imperative camera-navigation handle to the parent (used by the
+  // inspector navigate action and breadcrumb jumps).
   onNavigateForBookmarks?: (
     fn: (x: number, y: number, z?: number) => void,
   ) => void;
@@ -149,11 +142,6 @@ interface GraphCanvasProps {
   // Time Travel: filter nodes by timestamp
   timeTravelActive?: boolean;
   timeTravelVisibleNodes?: Set<string>;
-  // Lasso selection
-  onGetNodesInPolygon?: (
-    fn: (polygon: { x: number; y: number }[]) => string[],
-  ) => void;
-  lassoSelectedIds?: Set<string>;
   // Tag cloud filtering
   tagFilteredNodeIds?: Set<string>;
   hasTagFilter?: boolean;
@@ -169,7 +157,6 @@ export function GraphCanvas({
   searchTerm,
   onNodeSelect,
   onNodeHover,
-  onNodeContextMenu,
   gestureControlEnabled = false,
   trackingSource: source = "mediapipe",
   onGestureStateChange,
@@ -180,9 +167,9 @@ export function GraphCanvas({
   clusterConfig = DEFAULT_CLUSTER_CONFIG,
   relationshipVisibility = DEFAULT_RELATIONSHIP_VISIBILITY,
   typeColors = {},
+  expansionAnchors,
   onReheatReady,
   onResetViewReady,
-  onCameraStateForBookmarks,
   onNavigateForBookmarks,
   pathNodeIds,
   pathEdgeKeys,
@@ -191,8 +178,6 @@ export function GraphCanvas({
   isPathSelecting,
   timeTravelActive = false,
   timeTravelVisibleNodes,
-  onGetNodesInPolygon,
-  lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
   onClusterSelect,
@@ -214,11 +199,6 @@ export function GraphCanvas({
   const handleMiniMapNavigate = useCallback((x: number, y: number) => {
     navigateToRef.current?.(x, y);
   }, []);
-
-  // Forward camera state to parent for bookmarks
-  useEffect(() => {
-    onCameraStateForBookmarks?.(cameraState);
-  }, [cameraState, onCameraStateForBookmarks]);
 
   // Callback to capture and expose navigation function
   const handleNavigateToReady = useCallback(
@@ -282,7 +262,7 @@ export function GraphCanvas({
 
   return (
     <div
-      className={`relative w-full h-full transition-shadow duration-300 ${bimanualActive ? "ring-2 ring-inset ring-purple-500/50 shadow-[inset_0_0_30px_rgba(168,85,247,0.15)]" : ""}`}
+      className={`relative w-full h-full transition-shadow duration-300 ${bimanualActive ? "ring-2 ring-inset ring-white/40 shadow-[inset_0_0_30px_rgba(232,236,244,0.15)]" : ""}`}
     >
       <Canvas
         camera={{ position: [0, 0, 320], fov: 60, near: 0.1, far: 10000 }}
@@ -292,7 +272,9 @@ export function GraphCanvas({
           powerPreference: "high-performance",
         }}
         style={{
-          background: "linear-gradient(to bottom, #0a0a0f 0%, #0f0f18 100%)",
+          // Transparent so the fixed `.atmosphere` backdrop (gradient-mesh,
+          // contour grid, grain) shows through the WebGL clear.
+          background: "transparent",
         }}
         frameloop={performanceMode ? "demand" : "always"}
       >
@@ -304,7 +286,6 @@ export function GraphCanvas({
           searchTerm={searchTerm}
           onNodeSelect={onNodeSelect}
           onNodeHover={onNodeHover}
-          onNodeContextMenu={onNodeContextMenu}
           gestureState={gestureState}
           gestureControlEnabled={gestureControlEnabled && gesturesActive}
           performanceMode={performanceMode}
@@ -313,6 +294,7 @@ export function GraphCanvas({
           clusterConfig={clusterConfig}
           relationshipVisibility={relationshipVisibility}
           typeColors={typeColors}
+          expansionAnchors={expansionAnchors}
           onReheatReady={onReheatReady}
           onResetViewReady={onResetViewReady}
           onCameraStateChange={setCameraState}
@@ -325,8 +307,6 @@ export function GraphCanvas({
           isPathSelecting={isPathSelecting}
           timeTravelActive={timeTravelActive}
           timeTravelVisibleNodes={timeTravelVisibleNodes}
-          onGetNodesInPolygon={onGetNodesInPolygon}
-          lassoSelectedIds={lassoSelectedIds}
           tagFilteredNodeIds={tagFilteredNodeIds}
           hasTagFilter={hasTagFilter}
           onBimanualGrabChange={setBimanualActive}
@@ -350,12 +330,8 @@ export function GraphCanvas({
 
 interface SceneProps extends Omit<
   GraphCanvasProps,
-  "onGestureStateChange" | "onTrackingInfoChange" | "onNodeContextMenu"
+  "onGestureStateChange" | "onTrackingInfoChange"
 > {
-  onNodeContextMenu?: (
-    node: GraphNode,
-    screenPosition: { x: number; y: number },
-  ) => void;
   gestureState: GestureState;
   gestureControlEnabled: boolean;
   performanceMode: boolean;
@@ -377,11 +353,6 @@ interface SceneProps extends Omit<
   // Time Travel
   timeTravelActive?: boolean;
   timeTravelVisibleNodes?: Set<string>;
-  // Lasso selection
-  onGetNodesInPolygon?: (
-    fn: (polygon: { x: number; y: number }[]) => string[],
-  ) => void;
-  lassoSelectedIds?: Set<string>;
   // Tag cloud filtering
   tagFilteredNodeIds?: Set<string>;
   hasTagFilter?: boolean;
@@ -397,7 +368,6 @@ function Scene({
   searchTerm,
   onNodeSelect,
   onNodeHover,
-  onNodeContextMenu,
   gestureState,
   gestureControlEnabled,
   performanceMode,
@@ -406,6 +376,7 @@ function Scene({
   clusterConfig = DEFAULT_CLUSTER_CONFIG,
   relationshipVisibility = DEFAULT_RELATIONSHIP_VISIBILITY,
   typeColors = {},
+  expansionAnchors,
   onReheatReady,
   onResetViewReady,
   onCameraStateChange,
@@ -418,8 +389,6 @@ function Scene({
   isPathSelecting: _isPathSelecting,
   timeTravelActive = false,
   timeTravelVisibleNodes,
-  onGetNodesInPolygon,
-  lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
   onBimanualGrabChange,
@@ -431,7 +400,7 @@ function Scene({
     isSimulating,
     reheat,
     layoutTick,
-  } = useForceLayout({ nodes, edges, forceConfig });
+  } = useForceLayout({ nodes, edges, forceConfig, expansionAnchors });
 
   // Depth-based selection dimming: auto-spotlight when a node is selected
   const focusStates = useMemo(() => {
@@ -731,60 +700,6 @@ function Scene({
   }, [hoveredNode, clusters]);
 
   const hoveredClusterId = explicitHoveredClusterId ?? derivedHoveredClusterId;
-
-  // Get nodes inside a screen-space polygon (for lasso selection)
-  const getNodesInPolygon = useCallback(
-    (polygon: { x: number; y: number }[]) => {
-      if (polygon.length < 3) return [];
-
-      const canvas = document.querySelector("canvas");
-      if (!canvas) return [];
-      const rect = canvas.getBoundingClientRect();
-
-      const isPointInPolygon = (point: { x: number; y: number }) => {
-        let inside = false;
-        const n = polygon.length;
-        for (let i = 0, j = n - 1; i < n; j = i++) {
-          const xi = polygon[i].x;
-          const yi = polygon[i].y;
-          const xj = polygon[j].x;
-          const yj = polygon[j].y;
-          if (
-            yi > point.y !== yj > point.y &&
-            point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi
-          ) {
-            inside = !inside;
-          }
-        }
-        return inside;
-      };
-
-      const ap = animPositions.current;
-      const result: string[] = [];
-      layoutNodes.forEach((node, i) => {
-        const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0);
-        const py = ap.length > i * 3 + 1 ? ap[i * 3 + 1] : (node.y ?? 0);
-        const pz = ap.length > i * 3 + 2 ? ap[i * 3 + 2] : (node.z ?? 0);
-        const worldPos = new THREE.Vector3(px, py, pz);
-        if (groupRef.current) groupRef.current.localToWorld(worldPos);
-        const projected = worldPos.project(camera);
-        const screenX = ((projected.x + 1) / 2) * rect.width;
-        const screenY = ((-projected.y + 1) / 2) * rect.height;
-
-        if (isPointInPolygon({ x: screenX, y: screenY })) {
-          result.push(node.id);
-        }
-      });
-
-      return result;
-    },
-    [layoutNodes, camera, animPositions],
-  );
-
-  // Expose getNodesInPolygon to parent
-  useEffect(() => {
-    onGetNodesInPolygon?.(getNodesInPolygon);
-  }, [getNodesInPolygon, onGetNodesInPolygon]);
 
   const [autoRotate, setAutoRotate] = useState(false);
   const groupRef = useRef<THREE.Group>(null);
@@ -1285,7 +1200,6 @@ function Scene({
           connectedIds={connectedIds}
           onNodeSelect={onNodeSelect}
           onNodeHover={onNodeHover}
-          onNodeContextMenu={onNodeContextMenu}
           nodeSizeScale={displayConfig.nodeSizeScale}
           focusStates={focusStates}
           pathNodeIds={pathNodeIds}
@@ -1293,7 +1207,6 @@ function Scene({
           pathTargetId={pathTargetId}
           timeTravelActive={timeTravelActive}
           timeTravelVisibleNodes={timeTravelVisibleNodes}
-          lassoSelectedIds={lassoSelectedIds}
           tagFilteredNodeIds={tagFilteredNodeIds}
           hasTagFilter={hasTagFilter}
         />
@@ -1417,7 +1330,10 @@ function BatchedEdges({
     let visibleCount = 0;
 
     edges.forEach((edge) => {
-      if (!relationshipVisibility[edge.type]) return;
+      // Known types: respect the visibility toggle. Unknown types (future backend
+      // relationship types not yet in the enum) are shown by default so they don't
+      // silently vanish from the graph.
+      if (edge.type in relationshipVisibility && !relationshipVisibility[edge.type as keyof typeof relationshipVisibility]) return;
 
       const sourceNode = nodeById.get(edge.source);
       const targetNode = nodeById.get(edge.target);
@@ -1613,10 +1529,6 @@ interface InstancedNodesProps {
   connectedIds: Set<string>;
   onNodeSelect: (node: GraphNode | null) => void;
   onNodeHover: (node: GraphNode | null) => void;
-  onNodeContextMenu?: (
-    node: GraphNode,
-    screenPosition: { x: number; y: number },
-  ) => void;
   nodeSizeScale?: number;
   focusStates: Map<string, NodeFocusState>;
   pathNodeIds?: Set<string>;
@@ -1624,7 +1536,6 @@ interface InstancedNodesProps {
   pathTargetId?: string | null;
   timeTravelActive?: boolean;
   timeTravelVisibleNodes?: Set<string>;
-  lassoSelectedIds?: Set<string>;
   tagFilteredNodeIds?: Set<string>;
   hasTagFilter?: boolean;
 }
@@ -1639,7 +1550,6 @@ function InstancedNodes({
   connectedIds,
   onNodeSelect,
   onNodeHover,
-  onNodeContextMenu,
   nodeSizeScale = 1.0,
   focusStates,
   pathNodeIds,
@@ -1647,7 +1557,6 @@ function InstancedNodes({
   pathTargetId,
   timeTravelActive = false,
   timeTravelVisibleNodes,
-  lassoSelectedIds,
   tagFilteredNodeIds,
   hasTagFilter = false,
 }: InstancedNodesProps) {
@@ -1814,7 +1723,6 @@ function InstancedNodes({
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoveredNode?.id === node.id;
       const isSearchMatch = !!searchTerm && matchingIds.has(node.id);
-      const isLassoSelected = lassoSelectedIds?.has(node.id) ?? false;
 
       // Pathfinding state
       const isPathSource = pathSourceId === node.id;
@@ -1852,10 +1760,6 @@ function InstancedNodes({
         } else if (isInPath) {
           targetScale = Math.max(targetScale, 1.2);
         }
-        // Lasso selected nodes get a slight boost
-        if (isLassoSelected && !isSelected) {
-          targetScale = Math.max(targetScale, 1.15);
-        }
       }
       targetScalesRef.current[i] = targetScale;
 
@@ -1889,7 +1793,7 @@ function InstancedNodes({
       );
       zOffsetsRef.current[i] = newZOffset;
 
-      // Apply pulsing for search matches, path nodes, and lasso selected
+      // Apply pulsing for search matches and path nodes
       let finalScale = newScale;
       if (isSearchMatch) {
         const pulse = 1 + Math.sin(performance.now() * 0.004) * 0.15;
@@ -1898,11 +1802,6 @@ function InstancedNodes({
       if (isInPath && !isPathSource && !isPathTarget) {
         // Subtle pulse for intermediate path nodes
         const pulse = 1 + Math.sin(performance.now() * 0.003) * 0.08;
-        finalScale *= pulse;
-      }
-      if (isLassoSelected && !isSelected) {
-        // Gentle pulse for lasso selected nodes
-        const pulse = 1 + Math.sin(performance.now() * 0.0025) * 0.06;
         finalScale *= pulse;
       }
 
@@ -1927,7 +1826,7 @@ function InstancedNodes({
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       mesh.setMatrixAt(i, tempMatrix);
 
-      // Set color with special handling for path nodes and lasso selection
+      // Set color with special handling for path nodes
       if (isPathSource) {
         // Source node: bright green
         tempColor.set("#22c55e");
@@ -1937,28 +1836,21 @@ function InstancedNodes({
       } else if (isInPath) {
         // Intermediate path nodes: electric cyan
         tempColor.set("#00d4ff");
-      } else if (isLassoSelected) {
-        // Lasso selected nodes: blue tint
-        tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color);
-        // Add blue tint by lerping toward blue
-        const blueColor = new THREE.Color("#3b82f6");
-        tempColor.lerp(blueColor, 0.35);
       } else {
         // Use vibrant frontend palette, falling back to API color
         tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color);
       }
 
-      if (isDimmed && !isInPath && !isLassoSelected) {
+      if (isDimmed && !isInPath) {
         tempColor.multiplyScalar(0.5);
       } else if (
         isSelected ||
         isHovered ||
         isSearchMatch ||
-        isInPath ||
-        isLassoSelected
+        isInPath
       ) {
-        // Brighten selected/hovered/path/lasso nodes
-        tempColor.multiplyScalar(isInPath ? 1.3 : isLassoSelected ? 1.15 : 1.2);
+        // Brighten selected/hovered/path nodes
+        tempColor.multiplyScalar(isInPath ? 1.3 : 1.2);
       } else {
         // Recent nodes glow brighter - subtle pulsing brightness
         const nodeTimestamp = node.timestamp
@@ -1977,8 +1869,8 @@ function InstancedNodes({
           tempColor.multiplyScalar(1 + recentnessFactor * 0.15 * glowPulse);
         }
       }
-      // Apply focus mode opacity (but don't dim path or lasso selected nodes)
-      if (!isInPath && !isLassoSelected) {
+      // Apply focus mode opacity (but don't dim path nodes)
+      if (!isInPath) {
         tempColor.multiplyScalar(focusOpacity);
       }
       mesh.setColorAt(i, tempColor);
@@ -2014,42 +1906,12 @@ function InstancedNodes({
     [camera, pointer, raycaster, nodeIndexMap, onNodeHover],
   );
 
-  const handleContextMenu = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      if (!meshRef.current || !onNodeContextMenu) return;
-
-      // Prevent the browser's default context menu
-      event.nativeEvent.preventDefault();
-
-      raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObject(meshRef.current);
-
-      if (intersects.length > 0) {
-        const instanceId = intersects[0].instanceId;
-        if (instanceId !== undefined) {
-          const node = nodeIndexMap.get(instanceId);
-          if (node) {
-            event.stopPropagation();
-            // Get screen position from the native event
-            const screenPosition = {
-              x: event.nativeEvent.clientX,
-              y: event.nativeEvent.clientY,
-            };
-            onNodeContextMenu(node, screenPosition);
-          }
-        }
-      }
-    },
-    [camera, pointer, raycaster, nodeIndexMap, onNodeContextMenu],
-  );
-
   return (
     <instancedMesh
       key={`nodes-${nodeCount}`}
       ref={meshRef}
       args={[geometry, material, nodeCount]}
       onPointerMove={handlePointerMove}
-      onContextMenu={handleContextMenu}
       frustumCulled={true}
     />
   );

@@ -9,7 +9,7 @@ interface PositionInterpolationConfig {
 
 /**
  * Manages animated node positions with smooth interpolation.
- * Supports layered overrides for cluster forces and selection gravity.
+ * Supports a layered cluster-attraction override (see applyClusterAttraction).
  * Must be called inside a R3F Canvas context (uses useFrame).
  */
 export function usePositionInterpolation(

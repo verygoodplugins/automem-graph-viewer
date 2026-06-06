@@ -117,10 +117,21 @@ export interface SnapshotParams {
   since?: string
 }
 
+/**
+ * Server hard-caps snapshots at 2,000 rows (min(limit, 2000) in graph.py).
+ * Mirror that ceiling here so the client never asks for more than the server
+ * will return, and never emits `limit=0` (which the server runs as Cypher
+ * `LIMIT 0` → zero rows — the "Select All loads nothing" bug).
+ */
+export const MAX_SNAPSHOT = 2000
+
 export async function fetchGraphSnapshot(params: SnapshotParams = {}): Promise<GraphSnapshot> {
   const searchParams = new URLSearchParams()
 
-  if (params.limit != null) searchParams.set('limit', String(params.limit))
+  // Treat 0 / missing / NaN as "use the cap," never the floor. A falsy or
+  // non-positive limit means "as much as allowed," not "nothing."
+  const requested = params.limit && params.limit > 0 ? params.limit : MAX_SNAPSHOT
+  searchParams.set('limit', String(Math.min(requested, MAX_SNAPSHOT)))
   if (params.minImportance != null) searchParams.set('min_importance', String(params.minImportance))
   if (params.types?.length) searchParams.set('types', params.types.join(','))
   if (params.since) searchParams.set('since', params.since)

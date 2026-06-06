@@ -9,8 +9,6 @@ interface UseKeyboardNavigationOptions {
   onResetView?: () => void
   onToggleSettings?: () => void
   onToggleLabels?: () => void
-  onSaveBookmark?: () => void
-  onQuickNavigate?: (index: number) => void
   onStartPathfinding?: () => void
   onCancelPathfinding?: () => void
   onShowHelp?: () => void
@@ -37,8 +35,6 @@ export function useKeyboardNavigation({
   onResetView,
   onToggleSettings,
   onToggleLabels,
-  onSaveBookmark,
-  onQuickNavigate,
   onStartPathfinding,
   onCancelPathfinding,
   onShowHelp,
@@ -150,22 +146,6 @@ export function useKeyboardNavigation({
         event.target instanceof HTMLTextAreaElement
       ) {
         return
-      }
-
-      // Handle Cmd/Ctrl+B for save bookmark
-      if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
-        event.preventDefault()
-        onSaveBookmark?.()
-        return
-      }
-
-      // Handle number keys 1-9 for quick bookmark navigation
-      if (!event.metaKey && !event.ctrlKey && !event.altKey) {
-        const num = parseInt(event.key)
-        if (num >= 1 && num <= 9) {
-          onQuickNavigate?.(num)
-          return
-        }
       }
 
       const shortcuts: KeyboardShortcuts = {
@@ -282,7 +262,7 @@ export function useKeyboardNavigation({
         shortcut.action()
       }
     },
-    [enabled, findNodeInDirection, navigateSequential, onNodeSelect, onReheat, onResetView, onToggleSettings, onToggleLabels, onSaveBookmark, onQuickNavigate, onStartPathfinding, onCancelPathfinding, onShowHelp, isPathSelecting]
+    [enabled, findNodeInDirection, navigateSequential, onNodeSelect, onReheat, onResetView, onToggleSettings, onToggleLabels, onStartPathfinding, onCancelPathfinding, onShowHelp, isPathSelecting]
   )
 
   // Attach event listener
@@ -308,8 +288,6 @@ export function useKeyboardNavigation({
       { key: 'Shift+R', description: 'Reset view' },
       { key: ',', description: 'Toggle settings' },
       { key: 'L', description: 'Toggle labels' },
-      { key: 'Cmd+B', description: 'Save bookmark' },
-      { key: '1-9', description: 'Quick navigate to bookmark' },
       { key: '?', description: 'Show help' },
     ],
   }

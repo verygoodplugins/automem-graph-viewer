@@ -9,9 +9,9 @@ export function ToggleControl({ label, checked, onChange, description }: ToggleC
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="flex-1 min-w-0">
-        <label className="text-xs text-slate-400 block">{label}</label>
+        <label className="text-xs text-ink-3 block">{label}</label>
         {description && (
-          <span className="text-xs text-slate-600 block mt-0.5">{description}</span>
+          <span className="text-xs text-ink-4 block mt-0.5">{description}</span>
         )}
       </div>
       <button
@@ -21,7 +21,7 @@ export function ToggleControl({ label, checked, onChange, description }: ToggleC
         className={`
           relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full
           transition-colors duration-200 ease-in-out focus:outline-none
-          ${checked ? 'bg-blue-500' : 'bg-white/20'}
+          ${checked ? 'bg-accent' : 'bg-white/20'}
         `}
       >
         <span

@@ -20,8 +20,8 @@ export function SliderControl({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <label className="text-xs text-slate-400">{label}</label>
-        <span className="text-xs text-slate-500 font-mono">{formatValue(value)}</span>
+        <label className="text-xs text-ink-3">{label}</label>
+        <span className="text-xs text-ink-3 font-mono">{formatValue(value)}</span>
       </div>
       <input
         type="range"
@@ -35,14 +35,14 @@ export function SliderControl({
           [&::-webkit-slider-thumb]:w-4
           [&::-webkit-slider-thumb]:h-4
           [&::-webkit-slider-thumb]:rounded-full
-          [&::-webkit-slider-thumb]:bg-blue-500
+          [&::-webkit-slider-thumb]:bg-accent
           [&::-webkit-slider-thumb]:cursor-pointer
           [&::-webkit-slider-thumb]:transition-transform
           [&::-webkit-slider-thumb]:hover:scale-110
           [&::-moz-range-thumb]:w-4
           [&::-moz-range-thumb]:h-4
           [&::-moz-range-thumb]:rounded-full
-          [&::-moz-range-thumb]:bg-blue-500
+          [&::-moz-range-thumb]:bg-accent
           [&::-moz-range-thumb]:border-0
           [&::-moz-range-thumb]:cursor-pointer"
       />
