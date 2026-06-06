@@ -14,7 +14,14 @@
  * - Hand gestures: Two-hand pinch to pan/zoom/rotate; one-hand fist grab to pan
  */
 
-import { useRef, useMemo, useState, useCallback, useEffect } from "react";
+import {
+  useRef,
+  useMemo,
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Text, Billboard } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
@@ -1794,6 +1801,22 @@ function InstancedNodes({
     }
   }, [nodeCount]);
 
+  // Seed the per-instance color buffer BEFORE the first render. The material's
+  // onBeforeCompile injects `emissive * vColor`, but `vColor` only exists once an
+  // instanceColor buffer is present (USE_INSTANCING_COLOR). On a cold load the
+  // material can otherwise compile before the first per-frame setColorAt runs,
+  // producing "vColor: undeclared identifier" — and the constant customProgramCacheKey
+  // then locks that broken program in, leaving the graph blank. useLayoutEffect runs
+  // before paint (and before the rAF render loop), so the buffer always exists at
+  // first compile. The real colors are written every frame in useFrame.
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh || nodeCount === 0) return;
+    const seed = new THREE.Color(1, 1, 1);
+    for (let i = 0; i < nodeCount; i++) mesh.setColorAt(i, seed);
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [nodeCount]);
+
   // Temp objects for matrix calculations (reused to avoid GC)
   const tempMatrix = useMemo(() => new THREE.Matrix4(), []);
   const tempColor = useMemo(() => new THREE.Color(), []);
@@ -2033,6 +2056,14 @@ function InstancedNodes({
     },
     [camera, pointer, raycaster, nodeIndexMap, onNodeHover],
   );
+
+  // Don't render the mesh with zero instances. Doing so makes the material's
+  // emissive*vColor shader compile WITHOUT an instanceColor buffer (no vColor) —
+  // and the constant customProgramCacheKey would then cache that broken program
+  // for the lifetime of the GL context, leaving the graph blank even after data
+  // arrives. The mesh remounts (keyed on nodeCount) once nodes exist and the
+  // useLayoutEffect above has seeded instanceColor, so the first compile is valid.
+  if (nodeCount === 0) return null;
 
   return (
     <instancedMesh
