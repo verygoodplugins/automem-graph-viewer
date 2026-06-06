@@ -4,7 +4,8 @@ import { Keyboard, Settings } from 'lucide-react'
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useQueryClient } from '@tanstack/react-query'
 import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
-import { useExpandableGraph, normalizeNode } from './hooks/useExpandableGraph'
+import { useExpandableGraph } from './hooks/useExpandableGraph'
+import { normalizeNode } from './lib/normalizeNode'
 import { fetchGraphNeighbors } from './api/client'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
@@ -499,6 +500,10 @@ export default function App() {
     if (pathfinding.isSelectingTarget && node) {
       pathfinding.completePathSelection(node.id)
       sound.playPathFound()
+      // A caller may have queued a dramatic frame-fly (pendingFlyRef) before
+      // calling us; path selection consumes the click without selecting, so
+      // clear it here or the flag leaks onto the NEXT normal selection.
+      pendingFlyRef.current = false
       return
     }
     if (node) {

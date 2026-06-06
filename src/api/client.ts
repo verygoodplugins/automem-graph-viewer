@@ -1,5 +1,5 @@
 import type { GraphSnapshot, GraphNeighbors, GraphStats, GraphNode } from '../lib/types'
-import { normalizeNode } from '../hooks/useExpandableGraph'
+import { normalizeNode } from '../lib/normalizeNode'
 
 /**
  * Detect if running in embedded mode (served from /viewer/ on same origin).
@@ -229,19 +229,22 @@ export function mapRecallResultToNode(
 ): GraphNode {
   const m = result.memory ?? {}
   // color/radius/opacity intentionally absent — normalizeNode fills them (and
-  // coerces a non-finite importance/confidence to safe defaults).
-  const raw = {
-    id: result.id,
-    content: m.content ?? '',
-    type: m.type ?? 'Memory',
-    importance: m.importance,
-    confidence: m.confidence,
-    tags: m.tags ?? [],
-    timestamp: m.timestamp ?? '',
-    updated_at: m.updated_at,
-    metadata: m.metadata,
-  } as unknown as GraphNode
-  return normalizeNode(raw, typeColors)
+  // coerces a non-finite importance/confidence, and a non-union type, to safe
+  // defaults). The object satisfies `RawNode` (only `id` required), so no cast.
+  return normalizeNode(
+    {
+      id: result.id,
+      content: m.content ?? '',
+      type: m.type ?? 'Memory',
+      importance: m.importance,
+      confidence: m.confidence,
+      tags: m.tags ?? [],
+      timestamp: m.timestamp ?? '',
+      updated_at: m.updated_at,
+      metadata: m.metadata,
+    },
+    typeColors,
+  )
 }
 
 export async function updateMemory(

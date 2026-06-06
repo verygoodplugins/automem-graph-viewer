@@ -65,9 +65,11 @@ export function SearchResultsList({
     return [...results, ...localOnly]
   }, [results, nodes, lower])
 
-  // Headline count: trust the server's whole-store count; fall back to what we can
-  // show. "+" when capped.
-  const headlineCount = count ?? display.length
+  // Headline count: trust the server's whole-store count, but never show a number
+  // smaller than the rows actually rendered — local substring matches can append
+  // beyond the server count, and a header that reads lower than the list is
+  // self-contradictory. "+" (capped) semantics are preserved by the caller.
+  const headlineCount = Math.max(count ?? 0, display.length)
 
   if (display.length === 0) {
     if (isLoading) {
