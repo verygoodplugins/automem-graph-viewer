@@ -23,7 +23,7 @@ import {
   useLayoutEffect,
 } from "react";
 import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, Text, Billboard } from "@react-three/drei";
+import { OrbitControls, Text, Billboard, Stars } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { useForceLayout } from "../hooks/useForceLayout";
@@ -65,6 +65,21 @@ const SELECTION_DEFAULT_OPACITY = 0.15;
 // dozens of small clusters) don't bury the scene in floating text. We keep the
 // largest N by member count; the force still anchors every cluster.
 const MAX_VISIBLE_CLUSTERS = 16;
+
+// Importance halo: scale a default node's emissive brightness by its importance
+// so the bloom pass blooms high-importance memories into glowing halos. The node
+// material renders `emissive * vColor`, so a brighter per-instance color = a
+// brighter core = more bloom. importance 1 -> 1.7x (clears bloom threshold), 0 -> 1x.
+const IMPORTANCE_GLOW = 0.7;
+
+// Curved edges: tessellate each link into a shallow arc instead of a straight
+// segment, and modulate brightness by relationship strength. EDGE_SEGMENTS sub-
+// segments per edge -> EDGE_SEGMENTS*2 lineSegments vertices; EDGE_BOW is the arc
+// depth as a fraction of edge length (bowed radially outward from the origin).
+const EDGE_SEGMENTS = 6;
+const EDGE_VERTS = EDGE_SEGMENTS * 2;
+const EDGE_BOW = 0.12;
+
 import {
   SelectionHighlight,
   PinchPreSelectHighlight,
@@ -1345,6 +1360,21 @@ function Scene({
         maxDistance={2500}
       />
 
+      {/* Deep-space backdrop — world-space (outside the graph group) so it
+          parallaxes as the camera orbits instead of riding the graph's rotation.
+          Gated with the other postprocessing flourishes. */}
+      {!performanceMode && (
+        <Stars
+          radius={900}
+          depth={150}
+          count={6000}
+          factor={5}
+          saturation={0}
+          fade
+          speed={0.4}
+        />
+      )}
+
       {/* Graph content */}
       <group ref={groupRef}>
         {/* Batched edges - single draw call for all edges */}
@@ -1517,9 +1547,11 @@ function BatchedEdges({
   const maxEdges = edges.length;
 
   // Ensure buffers are sized before color writes in the useMemo below.
+  // EDGE_VERTS vertices per edge (each curved into EDGE_SEGMENTS sub-segments),
+  // 3 floats each.
   const posBufferRef = useRef(new Float32Array(0));
   const colorBufferRef = useRef(new Float32Array(0));
-  const neededEdgeBufferSize = maxEdges * 6;
+  const neededEdgeBufferSize = maxEdges * EDGE_VERTS * 3;
   if (
     posBufferRef.current.length !== neededEdgeBufferSize ||
     colorBufferRef.current.length !== neededEdgeBufferSize
@@ -1596,7 +1628,12 @@ function BatchedEdges({
         searchMatchingIds.has(edge.source) &&
         searchMatchingIds.has(edge.target);
 
-      let alpha = style.opacity * linkOpacity * focusOpacity;
+      // Relationship strength modulates brightness: strong links glow, weak links
+      // recede into the web. Special states (path/highlight/search) override it.
+      const strength = typeof edge.strength === "number" ? edge.strength : 0.5;
+      const strengthBoost = 0.45 + 0.9 * Math.max(0, Math.min(1, strength));
+
+      let alpha = style.opacity * linkOpacity * focusOpacity * strengthBoost;
       if (isInPath) {
         alpha = 1.0;
       } else if (isDimmed) {
@@ -1610,13 +1647,13 @@ function BatchedEdges({
       const r = color.r * alpha;
       const g = color.g * alpha;
       const b = color.b * alpha;
-      const off = slotIdx * 6;
-      colorBuf[off] = r;
-      colorBuf[off + 1] = g;
-      colorBuf[off + 2] = b;
-      colorBuf[off + 3] = r;
-      colorBuf[off + 4] = g;
-      colorBuf[off + 5] = b;
+      // Same color across every vertex of this edge's tessellated arc.
+      const off = slotIdx * EDGE_VERTS * 3;
+      for (let v = 0; v < EDGE_VERTS; v++) {
+        colorBuf[off + v * 3] = r;
+        colorBuf[off + v * 3 + 1] = g;
+        colorBuf[off + v * 3 + 2] = b;
+      }
     });
 
     return { edgeIndices, visibleCount };
@@ -1644,7 +1681,7 @@ function BatchedEdges({
     const geometry = lineRef.current.geometry;
     if (
       !initializedRef.current ||
-      geometry.getAttribute("position")?.count !== maxEdges * 2
+      geometry.getAttribute("position")?.count !== maxEdges * EDGE_VERTS
     ) {
       geometry.setAttribute(
         "position",
@@ -1658,7 +1695,13 @@ function BatchedEdges({
     }
   }, [maxEdges]);
 
-  // Update edge positions and colors from animated positions each frame
+  // Scratch arc points (EDGE_SEGMENTS+1 points × 3 floats), reused per edge so
+  // the per-frame curve sampling allocates nothing.
+  const arcPtsRef = useRef(new Float32Array((EDGE_SEGMENTS + 1) * 3));
+
+  // Update edge positions and colors from animated positions each frame. Each
+  // edge is sampled as a quadratic bezier (source → outward control → target)
+  // and emitted as EDGE_SEGMENTS lineSegments pairs.
   useFrame(() => {
     if (!lineRef.current) return;
     const ap = animatedPositions.current;
@@ -1669,26 +1712,86 @@ function BatchedEdges({
     }
 
     const posBuf = posBufferRef.current;
+    const arc = arcPtsRef.current;
     for (let i = 0; i < edgeIndices.length; i++) {
       const { srcIdx, tgtIdx } = edgeIndices[i];
-      const off = i * 6;
-      if (srcIdx * 3 + 2 < ap.length) {
-        posBuf[off] = ap[srcIdx * 3];
-        posBuf[off + 1] = ap[srcIdx * 3 + 1];
-        posBuf[off + 2] = ap[srcIdx * 3 + 2];
-      } else {
-        posBuf[off] = 0;
-        posBuf[off + 1] = 0;
-        posBuf[off + 2] = 0;
+      const off = i * EDGE_VERTS * 3;
+
+      if (srcIdx * 3 + 2 >= ap.length || tgtIdx * 3 + 2 >= ap.length) {
+        // Degenerate edge → collapse to a zero-length block (renders nothing).
+        for (let k = 0; k < EDGE_VERTS * 3; k++) posBuf[off + k] = 0;
+        continue;
       }
-      if (tgtIdx * 3 + 2 < ap.length) {
-        posBuf[off + 3] = ap[tgtIdx * 3];
-        posBuf[off + 4] = ap[tgtIdx * 3 + 1];
-        posBuf[off + 5] = ap[tgtIdx * 3 + 2];
-      } else {
-        posBuf[off + 3] = 0;
-        posBuf[off + 4] = 0;
-        posBuf[off + 5] = 0;
+
+      const sx = ap[srcIdx * 3];
+      const sy = ap[srcIdx * 3 + 1];
+      const sz = ap[srcIdx * 3 + 2];
+      const tx = ap[tgtIdx * 3];
+      const ty = ap[tgtIdx * 3 + 1];
+      const tz = ap[tgtIdx * 3 + 2];
+
+      // Midpoint + normalized edge direction.
+      const mx = (sx + tx) * 0.5;
+      const my = (sy + ty) * 0.5;
+      const mz = (sz + tz) * 0.5;
+      let abx = tx - sx;
+      let aby = ty - sy;
+      let abz = tz - sz;
+      const len = Math.hypot(abx, aby, abz) || 1;
+      abx /= len;
+      aby /= len;
+      abz /= len;
+
+      // Bow the arc outward from the origin: the component of the radial
+      // (midpoint) direction perpendicular to the edge. Fall back to a stable
+      // perpendicular when the edge passes through / near the origin.
+      const dot = mx * abx + my * aby + mz * abz;
+      let px = mx - abx * dot;
+      let py = my - aby * dot;
+      let pz = mz - abz * dot;
+      let plen = Math.hypot(px, py, pz);
+      if (plen < 1e-3) {
+        // cross(ab, worldUp)
+        px = -abz;
+        py = 0;
+        pz = abx;
+        plen = Math.hypot(px, py, pz);
+        if (plen < 1e-3) {
+          // edge parallel to up → cross(ab, worldRight)
+          px = 0;
+          py = abz;
+          pz = -aby;
+          plen = Math.hypot(px, py, pz) || 1;
+        }
+      }
+      const bow = EDGE_BOW * len;
+      const cx = mx + (px / plen) * bow;
+      const cy = my + (py / plen) * bow;
+      const cz = mz + (pz / plen) * bow;
+
+      // Sample the bezier at EDGE_SEGMENTS+1 points.
+      for (let p = 0; p <= EDGE_SEGMENTS; p++) {
+        const t = p / EDGE_SEGMENTS;
+        const u = 1 - t;
+        const w0 = u * u;
+        const w1 = 2 * u * t;
+        const w2 = t * t;
+        arc[p * 3] = w0 * sx + w1 * cx + w2 * tx;
+        arc[p * 3 + 1] = w0 * sy + w1 * cy + w2 * ty;
+        arc[p * 3 + 2] = w0 * sz + w1 * cz + w2 * tz;
+      }
+
+      // Emit consecutive points as lineSegments pairs: (P0,P1),(P1,P2),…
+      let w = off;
+      for (let s = 0; s < EDGE_SEGMENTS; s++) {
+        const a = s * 3;
+        const b = (s + 1) * 3;
+        posBuf[w++] = arc[a];
+        posBuf[w++] = arc[a + 1];
+        posBuf[w++] = arc[a + 2];
+        posBuf[w++] = arc[b];
+        posBuf[w++] = arc[b + 1];
+        posBuf[w++] = arc[b + 2];
       }
     }
 
@@ -1701,7 +1804,7 @@ function BatchedEdges({
     if (colorAttr) {
       colorAttr.needsUpdate = true;
     }
-    geometry.setDrawRange(0, visibleCount * 2);
+    geometry.setDrawRange(0, visibleCount * EDGE_VERTS);
     geometry.computeBoundingSphere();
   });
 
@@ -2109,6 +2212,11 @@ function InstancedNodes({
         if (spotlightActive && isSearchMatch) brightenFactor = 1.6;
         tempColor.multiplyScalar(brightenFactor);
       } else {
+        // Importance halo: brighter cores for important memories so bloom blooms
+        // them into glowing halos — turns "what matters" into visible bright stars.
+        if (node.importance > 0) {
+          tempColor.multiplyScalar(1 + node.importance * IMPORTANCE_GLOW);
+        }
         // Recent nodes glow brighter - subtle pulsing brightness
         const nodeTimestamp = node.timestamp
           ? new Date(node.timestamp).getTime()
