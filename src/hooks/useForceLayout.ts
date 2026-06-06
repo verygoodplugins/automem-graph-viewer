@@ -59,6 +59,21 @@ function createDataSignature(nodes: GraphNode[]): string {
   return sig
 }
 
+// Companion to createDataSignature for the edge set. An edges-only expansion
+// (e.g. a new link between two already-loaded nodes) leaves the node signature
+// unchanged, so without this the layout cache would skip the recompute and the
+// new link would never reach the simulation. Samples ~20 evenly-spaced edges by
+// their endpoint pair, mirroring the node sampling above.
+function createEdgeSignature(edges: GraphEdge[]): string {
+  if (edges.length === 0) return '0'
+  const step = Math.max(1, Math.floor(edges.length / 20))
+  let sig = String(edges.length)
+  for (let i = 0; i < edges.length; i += step) {
+    sig += `-${edges[i].source.slice(-6)}:${edges[i].target.slice(-6)}`
+  }
+  return sig
+}
+
 // Small random offset (±half the span) so co-seeded nodes don't stack exactly.
 function jitter(span: number): number {
   return (Math.random() - 0.5) * span
@@ -290,7 +305,14 @@ export function useForceLayout({
       return []
     }
 
-    const signature = createDataSignature(nodes)
+    // Key on nodes AND edges AND force config: an edges-only expansion or a
+    // force-slider change leaves the node set identical, but both must rebuild
+    // the simulation (new links / new forces). forceConfig is folded in by value
+    // so parent re-render identity churn doesn't trigger needless recomputes.
+    const signature =
+      createDataSignature(nodes) +
+      `|e:${createEdgeSignature(edges)}` +
+      `|f:${JSON.stringify(forceConfig)}`
 
     // Check cache - if signature matches, return cached nodes
     if (signature === layoutCache.signature && layoutCache.nodes.length > 0) {
