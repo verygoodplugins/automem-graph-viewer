@@ -1,21 +1,31 @@
 import { useMemo } from 'react'
-import type { SimulationNode, ClusterMode, GraphEdge } from '../lib/types'
+import type { GraphNode, ClusterMode, GraphEdge } from '../lib/types'
 
 export interface Cluster {
   id: string
   label: string
   color: string
   nodeIds: Set<string>
-  // Computed from node positions
+  // Deterministic Fibonacci-sphere anchor (NOT averaged from member positions).
   centroid: { x: number; y: number; z: number }
+  // Estimated lobe radius — members settle into a ball roughly this big around
+  // the anchor; consumed by the nebula hull + label offset.
   radius: number
+  // Nodes actually anchored into this lobe (single-assignment). This drives the
+  // hull size, label count, and force — it's what you SEE in the lobe.
   memberCount: number
+  // Raw multi-membership tag frequency (how many nodes carry this cluster's tag,
+  // before single-assignment claimed some for smaller/more-specific lobes). Always
+  // >= memberCount in entity mode; equal in the single-membership modes. Surfaced
+  // in the label as "N grouped · M tagged" so a big tag over a small lobe reads as
+  // intentional, not broken.
+  taggedCount: number
   topTags: string[]
   typeBreakdown: Record<string, number>
 }
 
 interface UseClusterDetectionOptions {
-  nodes: SimulationNode[]
+  nodes: GraphNode[]
   edges: GraphEdge[]
   mode: ClusterMode
   typeColors?: Record<string, string>
@@ -47,7 +57,7 @@ export function useClusterDetection({
     }
 
     // Group nodes by cluster key
-    const nodeGroups = new Map<string, SimulationNode[]>()
+    const nodeGroups = new Map<string, GraphNode[]>()
 
     if (mode === 'type') {
       // Group by memory type
@@ -110,7 +120,7 @@ export function useClusterDetection({
         if (visited.has(node.id)) continue
 
         const queue = [node.id]
-        const component: SimulationNode[] = []
+        const component: GraphNode[] = []
 
         while (queue.length > 0) {
           const id = queue.shift()!
@@ -153,45 +163,138 @@ export function useClusterDetection({
       }
     }
 
-    // Convert groups to Cluster objects with computed centroids
-    const clusters: Cluster[] = []
+    // --- Deterministic spread anchors (position-independent) ----------------
+    // Each surviving cluster gets a fixed anchor on a Fibonacci sphere, ordered
+    // by a stable key sort so anchors never reshuffle between renders. The force
+    // layer (useForceLayout) pulls members toward these anchors; forceCollide
+    // then spreads them into a ball, so members land tight around the anchor.
+    // centroid IS the anchor (not averaged from positions — that was the old
+    // circular dependency) and radius is an estimate of the settled ball, both
+    // consumed by ClusterBoundaries (nebula hull) + ClusterLabels (offset).
+    const BASE_SHELL = 120
+    const SHELL_FACTOR = 1.1
+    const CLUSTER_BASE = 18
+    const RADIUS_K = 6
 
+    // Candidate clusters: every group with >= 2 raw (multi-membership) members.
+    // entity mode can produce hundreds of these (one per entity tag) — they are
+    // NOT all rendered or anchored; the active set below restricts to a handful.
+    interface CandidateCluster {
+      key: string
+      uniqueNodes: GraphNode[]
+    }
+
+    const candidates: CandidateCluster[] = []
     for (const [key, groupNodes] of nodeGroups) {
-      if (groupNodes.length < 2) continue // Skip single-node clusters
+      // Deduplicate nodes (entity mode can push the same node multiple times).
+      const seenIds = new Set<string>()
+      const uniqueNodes = groupNodes.filter((n) => {
+        if (seenIds.has(n.id)) return false
+        seenIds.add(n.id)
+        return true
+      })
+      if (uniqueNodes.length < 2) continue // Skip single-node clusters
+      candidates.push({ key, uniqueNodes })
+    }
 
-      // Calculate centroid
-      let cx = 0, cy = 0, cz = 0
-      for (const node of groupNodes) {
-        cx += node.x || 0
-        cy += node.y || 0
-        cz += node.z || 0
+    // --- Active set + single-assignment (the fix for "label says 49, lobe empty")
+    // A personal corpus yields ~800 entity clusters, but only a handful can render
+    // or anchor legibly. Restrict force + shell + labels to ONE active set — the
+    // top-N candidates by tag frequency — so all four agree on the same universe.
+    //
+    // Then assign each node to the SMALLEST active cluster it belongs to (most
+    // specific), tie-broken by key. Smallest-wins is right for "everything about
+    // Dana" — BUT only when the contest is the rendered set. Smallest-wins across
+    // all 800 sent members into invisible micro-clusters (Dana 11/114, Railway
+    // 4/49); smallest-wins across the active 16 keeps them in a lobe you can see.
+    // This single-assignment is the force anchor AND the rendered membership, so a
+    // label counts exactly what's pulled into its lobe — no multi-membership inflation.
+    const MAX_ACTIVE_CLUSTERS = 16 // keep in sync with MAX_VISIBLE_CLUSTERS in GraphCanvas
+    const activeSet = [...candidates]
+      .sort((a, b) => b.uniqueNodes.length - a.uniqueNodes.length) // largest tag-count first
+      .slice(0, MAX_ACTIVE_CLUSTERS)
+
+    // Claim smallest-first so a node in {Railway:49, Jack:419} lands in Railway.
+    const assignOrder = [...activeSet].sort(
+      (a, b) =>
+        a.uniqueNodes.length - b.uniqueNodes.length ||
+        (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    )
+    const assignedNodes = new Map<string, GraphNode[]>()
+    const claimed = new Set<string>()
+    for (const c of assignOrder) {
+      const mine: GraphNode[] = []
+      for (const n of c.uniqueNodes) {
+        if (claimed.has(n.id)) continue
+        claimed.add(n.id)
+        mine.push(n)
       }
-      cx /= groupNodes.length
-      cy /= groupNodes.length
-      cz /= groupNodes.length
+      assignedNodes.set(c.key, mine)
+    }
 
-      // Calculate radius (max distance from centroid + padding)
-      let maxDist = 0
-      for (const node of groupNodes) {
-        const dx = (node.x || 0) - cx
-        const dy = (node.y || 0) - cy
-        const dz = (node.z || 0) - cz
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-        maxDist = Math.max(maxDist, dist)
+    interface PendingCluster {
+      key: string
+      nodes: GraphNode[] // single-assignment members (what the lobe actually holds)
+      taggedCount: number // raw multi-membership tag frequency
+      radius: number
+    }
+
+    // Keep active clusters that retained >= 2 members after assignment, then sort
+    // by key for a STABLE Fibonacci anchor assignment across renders.
+    const pending: PendingCluster[] = activeSet
+      .map((c) => {
+        const nodes = assignedNodes.get(c.key) ?? []
+        return {
+          key: c.key,
+          nodes,
+          taggedCount: c.uniqueNodes.length,
+          radius: CLUSTER_BASE + RADIUS_K * Math.cbrt(Math.max(nodes.length, 1)),
+        }
+      })
+      .filter((p) => p.nodes.length >= 2)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+
+    const clusterCount = pending.length
+    const meanRadius =
+      clusterCount > 0
+        ? pending.reduce((sum, p) => sum + p.radius, 0) / clusterCount
+        : 0
+    // Spread the lobes far enough apart that they don't overlap. Scales with the
+    // ACTIVE cluster count (<= MAX_ACTIVE_CLUSTERS) and mean lobe size — NOT the
+    // ~800 raw candidates, which blew the shell out to ~850 and left members
+    // stranded 5x their lobe radius short of the anchor.
+    const shellRadius = Math.max(
+      BASE_SHELL,
+      SHELL_FACTOR * meanRadius * Math.sqrt(clusterCount),
+    )
+    const goldenAngle = Math.PI * (1 + Math.sqrt(5))
+
+    const clusters: Cluster[] = pending.map((p, i) => {
+      // Deterministic Fibonacci-sphere anchor. A lone cluster sits at the origin.
+      let ax = 0
+      let ay = 0
+      let az = 0
+      if (clusterCount > 1) {
+        const phi = Math.acos(1 - (2 * (i + 0.5)) / clusterCount)
+        const theta = goldenAngle * i
+        ax = shellRadius * Math.sin(phi) * Math.cos(theta)
+        ay = shellRadius * Math.sin(phi) * Math.sin(theta)
+        az = shellRadius * Math.cos(phi)
       }
 
       // Determine color
       let color: string
-      if (mode === 'type' && typeColors[key]) {
-        color = typeColors[key]
+      if (mode === 'type' && typeColors[p.key]) {
+        color = typeColors[p.key]
       } else {
-        color = hashColor(key)
+        color = hashColor(p.key)
       }
 
-      // Compute metadata: top tags and type breakdown
+      // Compute metadata from the ASSIGNED members (what the lobe holds), not the
+      // raw tag set — so topTags/typeBreakdown describe what's actually rendered.
       const tagCounts = new Map<string, number>()
       const typeCounts: Record<string, number> = {}
-      for (const node of groupNodes) {
+      for (const node of p.nodes) {
         typeCounts[node.type] = (typeCounts[node.type] || 0) + 1
         for (const tag of node.tags) {
           // Skip entity tags in topTags except in entity mode
@@ -205,33 +308,26 @@ export function useClusterDetection({
         .map(([tag]) => tag)
 
       // Derive display label — for entity mode, capitalize the entity name
-      let label = key
+      let label = p.key
       if (mode === 'entity') {
         // key is "category:name" e.g. "person:dana" → "Dana"
-        const namePart = key.includes(':') ? key.split(':').pop()! : key
+        const namePart = p.key.includes(':') ? p.key.split(':').pop()! : p.key
         label = namePart.charAt(0).toUpperCase() + namePart.slice(1)
       }
 
-      // Deduplicate nodes (entity mode can push same node multiple times for same cluster)
-      const seenIds = new Set<string>()
-      const uniqueNodes = groupNodes.filter(n => {
-        if (seenIds.has(n.id)) return false
-        seenIds.add(n.id)
-        return true
-      })
-
-      clusters.push({
-        id: key,
+      return {
+        id: p.key,
         label,
         color,
-        nodeIds: new Set(uniqueNodes.map(n => n.id)),
-        centroid: { x: cx, y: cy, z: cz },
-        radius: maxDist + 15,
-        memberCount: uniqueNodes.length,
+        nodeIds: new Set(p.nodes.map((n) => n.id)),
+        centroid: { x: ax, y: ay, z: az },
+        radius: p.radius,
+        memberCount: p.nodes.length,
+        taggedCount: p.taggedCount,
         topTags,
         typeBreakdown: typeCounts,
-      })
-    }
+      }
+    })
 
     return clusters
   }, [nodes, edges, mode, typeColors])

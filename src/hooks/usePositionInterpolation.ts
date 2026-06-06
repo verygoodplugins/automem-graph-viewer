@@ -9,7 +9,6 @@ interface PositionInterpolationConfig {
 
 /**
  * Manages animated node positions with smooth interpolation.
- * Supports a layered cluster-attraction override (see applyClusterAttraction).
  * Must be called inside a R3F Canvas context (uses useFrame).
  */
 export function usePositionInterpolation(
@@ -102,32 +101,4 @@ export function readAnimatedPosition(
     out.z = 0;
   }
   return out;
-}
-
-/**
- * Apply cluster attraction - pull nodes toward their cluster centroids.
- * Modifies targetPositions in-place (blended on top of existing targets).
- */
-export function applyClusterAttraction(
-  clusterAssignments: Map<string, { cx: number; cy: number; cz: number }>,
-  nodeIdToIdx: Map<string, number>,
-  _basePositions: Float32Array,
-  targetPositions: Float32Array,
-  strength: number,
-) {
-  if (strength <= 0) return;
-
-  clusterAssignments.forEach((centroid, nodeId) => {
-    const idx = nodeIdToIdx.get(nodeId);
-    if (idx === undefined) return;
-
-    const offset = idx * 3;
-    const bx = targetPositions[offset];
-    const by = targetPositions[offset + 1];
-    const bz = targetPositions[offset + 2];
-
-    targetPositions[offset] = bx + (centroid.cx - bx) * strength * 0.3;
-    targetPositions[offset + 1] = by + (centroid.cy - by) * strength * 0.3;
-    targetPositions[offset + 2] = bz + (centroid.cz - bz) * strength * 0.3;
-  });
 }

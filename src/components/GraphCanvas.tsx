@@ -27,10 +27,7 @@ import { OrbitControls, Text, Billboard } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { useForceLayout } from "../hooks/useForceLayout";
-import {
-  usePositionInterpolation,
-  applyClusterAttraction,
-} from "@/hooks/usePositionInterpolation";
+import { usePositionInterpolation } from "@/hooks/usePositionInterpolation";
 import { useHandGestures, GestureState } from "../hooks/useHandGestures";
 import { useIPhoneHandTracking } from "../hooks/useIPhoneHandTracking";
 import { useHandLockAndGrab } from "../hooks/useHandLockAndGrab";
@@ -64,6 +61,10 @@ interface NodeFocusState {
 
 const SELECTION_DEPTH_OPACITY = [1.0, 1.0, 0.7, 0.4];
 const SELECTION_DEFAULT_OPACITY = 0.15;
+// Cap how many cluster hulls/labels render so tags/entity modes (which can yield
+// dozens of small clusters) don't bury the scene in floating text. We keep the
+// largest N by member count; the force still anchors every cluster.
+const MAX_VISIBLE_CLUSTERS = 16;
 import {
   SelectionHighlight,
   PinchPreSelectHighlight,
@@ -419,12 +420,62 @@ function Scene({
   onClusterSelect,
 }: SceneProps) {
   const { camera } = useThree();
+
+  // Cluster detection runs on the RAW nodes (position-independent now — it only
+  // reads tags/type/edges) and feeds deterministic anchors into the layout below,
+  // so it must be computed BEFORE useForceLayout.
+  const clusters = useClusterDetection({
+    nodes,
+    edges,
+    mode: clusterConfig.mode,
+    typeColors,
+  });
+
+  // Single-valued anchor per node for the cluster FORCE. A node may belong to
+  // several clusters (entity mode: multiple entity: tags); averaging their anchors
+  // would pull it to dead space between lobes (in neither). Instead pick ONE
+  // dominant cluster deterministically — the smallest cluster it belongs to (most
+  // specific), tie-broken by smallest cluster id. Multi-membership is preserved
+  // for boundaries/labels/affinity-highlighting; only the force anchor collapses.
+  const clusterAnchorsByNodeId = useMemo(() => {
+    const anchor = new Map<string, { x: number; y: number; z: number }>();
+    const bestSize = new Map<string, number>();
+    // Sort by id ascending so the tiebreak (equal member counts) is deterministic.
+    const ordered = [...clusters].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+    );
+    for (const cluster of ordered) {
+      const size = cluster.memberCount;
+      cluster.nodeIds.forEach((nodeId) => {
+        const prev = bestSize.get(nodeId);
+        // Strictly smaller wins; equal sizes keep the earlier (smaller-id) cluster.
+        if (prev === undefined || size < prev) {
+          bestSize.set(nodeId, size);
+          anchor.set(nodeId, cluster.centroid);
+        }
+      });
+    }
+    return anchor;
+  }, [clusters]);
+
   const {
     nodes: layoutNodes,
     isSimulating,
     reheat,
     layoutTick,
-  } = useForceLayout({ nodes, edges, forceConfig, expansionAnchors });
+  } = useForceLayout({
+    nodes,
+    edges,
+    forceConfig,
+    expansionAnchors,
+    clusterAnchors: clusterAnchorsByNodeId,
+    // Passed UNCONDITIONALLY (not gated on mode !== 'none'): the force only exists
+    // when anchors exist (mode !== 'none' → non-empty map), so keeping strength
+    // constant across mode toggles means a mode flip never spuriously trips the
+    // live strength-mutation effect — only the firmer relocate-settle runs.
+    clusterForceStrength: clusterConfig.clusterStrength,
+    clusterSignature: clusterConfig.mode,
+  });
 
   // Live, always-current view of the simulated nodes. navigateToNode reads this
   // by id so it flies to a node's CURRENT position — the snapshot node objects
@@ -511,80 +562,87 @@ function Scene({
     return result;
   }, [layoutNodes, edges, selectedNode]);
 
-  // Cluster detection
-  const clusters = useClusterDetection({
-    nodes: layoutNodes,
-    edges,
-    mode: clusterConfig.mode,
-    typeColors,
-  });
+  // Position interpolation system. The cluster force now lives in the simulation,
+  // so node positions come straight from the sim — there's no post-hoc target
+  // override to apply. We only need the animated positions and the id→index map.
+  const { currentPositions: animPositions, nodeIdToIdx } =
+    usePositionInterpolation(layoutNodes, { lerpSpeed: 5, layoutTick });
 
-  // Position interpolation system
-  const {
-    currentPositions: animPositions,
-    targetPositions: animTargets,
-    basePositions: animBase,
-    nodeIdToIdx,
-  } = usePositionInterpolation(layoutNodes, { lerpSpeed: 5, layoutTick });
-
-  // Compute cluster centroid assignments for force attraction.
-  // A node may belong to multiple clusters (e.g. entity mode with several entity tags).
-  // We average all cluster centroids the node belongs to so the attraction target is
-  // deterministic and not dependent on cluster iteration order.
-  const clusterAssignments = useMemo(() => {
-    const accumulator = new Map<
-      string,
-      { cx: number; cy: number; cz: number; count: number }
-    >();
-    clusters.forEach((cluster) => {
-      cluster.nodeIds.forEach((nodeId) => {
-        const existing = accumulator.get(nodeId);
-        if (existing) {
-          existing.cx += cluster.centroid.x;
-          existing.cy += cluster.centroid.y;
-          existing.cz += cluster.centroid.z;
-          existing.count++;
-        } else {
-          accumulator.set(nodeId, {
-            cx: cluster.centroid.x,
-            cy: cluster.centroid.y,
-            cz: cluster.centroid.z,
-            count: 1,
-          });
-        }
-      });
-    });
-    const map = new Map<string, { cx: number; cy: number; cz: number }>();
-    accumulator.forEach(({ cx, cy, cz, count }, nodeId) => {
-      map.set(nodeId, { cx: cx / count, cy: cy / count, cz: cz / count });
-    });
-    return map;
+  // Cap how many hulls/labels render (see MAX_VISIBLE_CLUSTERS). tags/entity modes
+  // can produce dozens of small clusters; we keep the largest N by member count.
+  // The force still anchors every cluster — this only thins the rendered overlay.
+  const visibleClusters = useMemo(() => {
+    if (clusters.length <= MAX_VISIBLE_CLUSTERS) return clusters;
+    return [...clusters]
+      .sort((a, b) => b.memberCount - a.memberCount)
+      .slice(0, MAX_VISIBLE_CLUSTERS);
   }, [clusters]);
 
-  // Recompute target positions when cluster mode/strength or layout changes
-  useEffect(() => {
-    if (animBase.current.length === 0) return;
-
-    animTargets.current.set(animBase.current);
-
-    if (clusterConfig.mode !== "none") {
-      applyClusterAttraction(
-        clusterAssignments,
-        nodeIdToIdx,
-        animBase.current,
-        animTargets.current,
-        clusterConfig.clusterStrength,
-      );
+  // Display clusters: hull + label centroid/radius recomputed from where the
+  // force-anchored members ACTUALLY settled, not from the deterministic anchor.
+  // The anchor (clusterAnchorsByNodeId, built from `clusters`) still drives the
+  // FORCE; this only moves the drawn hull/label onto the real node clump, so a
+  // lobe's hull can never float over empty space regardless of physics tuning.
+  //
+  // Members are the single-assigned set (anchor === this cluster's centroid by
+  // reference) — i.e. exactly the nodes the force pulls here, which is what you
+  // see in the lobe. Nodes a smaller cluster claimed settled elsewhere and are
+  // excluded so they don't drag the centroid into dead space.
+  //
+  // MUST depend on layoutTick: the sim mutates layoutNodes x/y/z in place (array
+  // reference stays stable), so layoutTick is the only signal that positions
+  // moved. Keying on layoutNodes alone would compute once at seed and never track
+  // the settle. Limitation: a bimodal cluster (two sub-blobs) centers in the gap
+  // between them — still strictly better than a hull over nothing.
+  const displayClusters = useMemo(() => {
+    const PAD = 6; // breathing room beyond the member spread
+    const FLOOR = 12; // minimum visible hull for tiny/tight lobes
+    const posById = new Map<string, { x: number; y: number; z: number }>();
+    for (const n of layoutNodes) {
+      if (n.x == null || n.y == null || n.z == null) continue;
+      posById.set(n.id, { x: n.x, y: n.y, z: n.z });
     }
-  }, [
-    clusterConfig.mode,
-    clusterConfig.clusterStrength,
-    clusterAssignments,
-    nodeIdToIdx,
-    animBase,
-    animTargets,
-    layoutTick,
-  ]);
+    return visibleClusters.map((c) => {
+      const pts: { x: number; y: number; z: number }[] = [];
+      c.nodeIds.forEach((id) => {
+        // Reference equality with the deterministic anchor identifies the nodes
+        // the force actually pulled into THIS lobe (single-assignment winner).
+        if (clusterAnchorsByNodeId.get(id) !== c.centroid) return;
+        const p = posById.get(id);
+        if (p) pts.push(p);
+      });
+      if (pts.length === 0) return c; // no settled members → keep anchor/estimate
+      let sx = 0,
+        sy = 0,
+        sz = 0;
+      for (const p of pts) {
+        sx += p.x;
+        sy += p.y;
+        sz += p.z;
+      }
+      const centroid = {
+        x: sx / pts.length,
+        y: sy / pts.length,
+        z: sz / pts.length,
+      };
+      const dists = pts
+        .map((p) => {
+          const dx = p.x - centroid.x;
+          const dy = p.y - centroid.y;
+          const dz = p.z - centroid.z;
+          return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        })
+        .sort((a, b) => a - b);
+      // 90th percentile, not max — a single outlier shouldn't balloon the hull.
+      const p90 = dists[Math.floor(0.9 * (dists.length - 1))] ?? 0;
+      const radius = Math.max(FLOOR, p90 + PAD);
+      return { ...c, centroid, radius };
+    });
+    // layoutTick is intentionally a dependency though unread in the body: the sim
+    // mutates layoutNodes in place (stable ref), so layoutTick is what signals a
+    // position change and forces this memo to re-read the settled positions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleClusters, clusterAnchorsByNodeId, layoutNodes, layoutTick]);
 
   // Expose reheat function to parent
   useEffect(() => {
@@ -1292,13 +1350,13 @@ function Scene({
         {/* Batched edges - single draw call for all edges */}
         {/* Cluster boundaries (rendered behind edges) */}
         <ClusterBoundaries
-          clusters={clusters}
+          clusters={displayClusters}
           visible={clusterConfig.showBoundaries}
           opacity={0.08}
           hoveredClusterId={hoveredClusterId}
         />
         <ClusterLabels
-          clusters={clusters}
+          clusters={displayClusters}
           visible={clusterConfig.mode !== "none" && clusterConfig.showLabels}
           hoveredClusterId={hoveredClusterId}
           onClusterHover={handleClusterHover}

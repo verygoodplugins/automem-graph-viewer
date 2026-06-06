@@ -186,7 +186,7 @@ export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
 
 export const DEFAULT_CLUSTER_CONFIG: ClusterConfig = {
   mode: 'type',
-  showBoundaries: false,
+  showBoundaries: true,
   showLabels: true,
   clusterStrength: 0.3,
 }

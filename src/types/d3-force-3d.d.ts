@@ -117,4 +117,35 @@ declare module 'd3-force-3d' {
     z(): number
     z(z: number): any
   }
+
+  // Positional forces — pull nodes toward a target coordinate on a single axis.
+  // Used for the deterministic cluster anchors (forceX/Y/Z toward a per-node
+  // target). Position accessor and strength may both be functions of the node.
+  export type PositionForce3D<NodeDatum extends SimulationNodeDatum> = {
+    (alpha: number): void
+    initialize(nodes: NodeDatum[], random: () => number): void
+    strength(): (node: NodeDatum, i: number, nodes: NodeDatum[]) => number
+    strength(strength: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)): any
+  }
+
+  export function forceX<NodeDatum extends SimulationNodeDatum>(
+    x?: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)
+  ): PositionForce3D<NodeDatum> & {
+    x(): (node: NodeDatum, i: number, nodes: NodeDatum[]) => number
+    x(x: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)): any
+  }
+
+  export function forceY<NodeDatum extends SimulationNodeDatum>(
+    y?: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)
+  ): PositionForce3D<NodeDatum> & {
+    y(): (node: NodeDatum, i: number, nodes: NodeDatum[]) => number
+    y(y: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)): any
+  }
+
+  export function forceZ<NodeDatum extends SimulationNodeDatum>(
+    z?: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)
+  ): PositionForce3D<NodeDatum> & {
+    z(): (node: NodeDatum, i: number, nodes: NodeDatum[]) => number
+    z(z: number | ((node: NodeDatum, i: number, nodes: NodeDatum[]) => number)): any
+  }
 }
