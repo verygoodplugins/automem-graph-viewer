@@ -2,11 +2,15 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Keyboard, Settings } from 'lucide-react'
 
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
-import { useGraphSnapshot } from './hooks/useGraphData'
+import { useQueryClient } from '@tanstack/react-query'
+import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
 import { useExpandableGraph } from './hooks/useExpandableGraph'
+import { normalizeNode } from './lib/normalizeNode'
+import { fetchGraphNeighbors } from './api/client'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
+import { SearchResultsList } from './components/SearchResultsList'
 import { SearchBar } from './components/SearchBar'
 import { TokenPrompt } from './components/TokenPrompt'
 import { StatsBar } from './components/StatsBar'
@@ -45,6 +49,7 @@ import {
   DEFAULT_RELATIONSHIP_VISIBILITY,
 } from './lib/types'
 import type { GestureState } from './hooks/useHandGestures'
+import { matchesSearch } from './lib/searchMatch'
 
 // Default gesture state for when not tracking
 const DEFAULT_GESTURE_STATE: GestureState = {
@@ -123,6 +128,9 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  // Id of an off-graph search result currently being fetched + injected (the row
+  // shows a spinner and is disabled until the neighborhood merges in).
+  const [loadingResultId, setLoadingResultId] = useState<string | null>(null)
   const [gestureControlEnabled, setGestureControlEnabled] = useState(false)
   const [debugOverlayVisible, setDebugOverlayVisible] = useState(false)
   const [performanceMode, setPerformanceMode] = useState(false)
@@ -254,18 +262,45 @@ export default function App() {
 
   // Imperative camera-navigation handle, populated by GraphCanvas. Used by the
   // inspector "navigate" action, breadcrumb jumps, and the select-to-focus effect.
-  const navigateForBookmarksRef = useRef<((x: number, y: number, z?: number) => void) | null>(null)
+  const navigateForBookmarksRef = useRef<
+    ((nodeId: string, frame?: boolean) => void) | null
+  >(null)
   const inspectorPanelRef = useRef<ImperativePanelHandle>(null)
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
+  // Id we last flew the camera to, so search-box edits (which also retrigger the
+  // effect below via searchTerm) don't re-fly to an already-centered node.
+  const lastNavigatedIdRef = useRef<string | null>(null)
+  // Set just before a search-result click changes the selection, so that path
+  // gets the dramatic fly-in + frame while direct clicks / keyboard nav keep the
+  // gentle re-target.
+  const pendingFlyRef = useRef(false)
 
+  // Open the sidebar for a selected node OR an active search; collapse otherwise.
+  // This effect is the SINGLE navigator on selection — it flies + frames the node
+  // (passing its radius) only when the selected node actually changes. Every
+  // selection path funnels through here, so we don't fire a competing animation.
   useEffect(() => {
-    if (selectedNode) {
+    if (selectedNode || searchTerm.trim()) {
       inspectorPanelRef.current?.expand()
-      navigateForBookmarksRef.current?.(selectedNode.x ?? 0, selectedNode.y ?? 0, selectedNode.z ?? 0)
     } else {
       inspectorPanelRef.current?.collapse()
     }
-  }, [selectedNode])
+    if (!selectedNode) {
+      lastNavigatedIdRef.current = null
+      return
+    }
+    if (selectedNode.id !== lastNavigatedIdRef.current) {
+      lastNavigatedIdRef.current = selectedNode.id
+      // Pass the id; GraphCanvas resolves the node's live simulated position.
+      // Only search-result clicks fly in + frame; everything else (direct graph
+      // clicks, keyboard nav, breadcrumb/inspector jumps) keeps the gentle re-target.
+      const frame = pendingFlyRef.current
+      pendingFlyRef.current = false
+      navigateForBookmarksRef.current?.(selectedNode.id, frame)
+    } else {
+      pendingFlyRef.current = false
+    }
+  }, [selectedNode, searchTerm])
 
   const handleGestureStateChange = useCallback((state: GestureState) => {
     setGestureState(state)
@@ -287,6 +322,13 @@ export default function App() {
   // The live, growing graph: seeded/reset from the immutable snapshot, grown by
   // expanding a node's neighborhood. This is the source of truth for what renders.
   const graph = useExpandableGraph(data)
+
+  const queryClient = useQueryClient()
+
+  // Whole-store search via /recall (debounced upstream by the SearchBar). This is
+  // what makes search find memories that aren't in the loaded snapshot — the fix
+  // for "search only sees ~2k of ~120k". Disabled until the term is non-empty.
+  const recall = useRecall(searchTerm, data?.meta?.type_colors)
 
   // Stable data references. Once the snapshot has seeded the expandable graph,
   // read from it (so expansions are visible); fall back to the raw snapshot for
@@ -386,16 +428,23 @@ export default function App() {
     }
     // Apply search filter
     if (searchTerm.trim()) {
-      const lower = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (n) =>
-          n.content.toLowerCase().includes(lower) ||
-          n.type.toLowerCase().includes(lower) ||
-          n.tags.some((t) => t.toLowerCase().includes(lower))
-      )
+      const lower = searchTerm.trim().toLowerCase()
+      filtered = filtered.filter((n) => matchesSearch(n, lower))
     }
     return filtered.length
   }, [nodes, tagCloud.hasActiveFilter, tagCloud.filteredNodeIds, searchTerm, filterChips.hasActiveFilters])
+
+  // Loaded nodes passing the TAG filter only. The StatsBar ("of loaded scene") is
+  // about what's rendered, so it keys off tag filtering — which is genuinely
+  // client-side over loaded nodes. Text search is whole-store and reports its count
+  // separately in the SearchBar, so it must NOT shrink this "loaded" number (that's
+  // exactly the "2 of 2,000 reads as exhaustive" bug).
+  const tagVisibleNodeCount = useMemo(() => {
+    if (!tagCloud.hasActiveFilter) return nodes.length
+    return nodes.filter((n) => tagCloud.filteredNodeIds.has(n.id)).length
+  }, [nodes, tagCloud.hasActiveFilter, tagCloud.filteredNodeIds])
+
+  const searchActive = searchTerm.trim().length > 0
 
   // Sound Effects
   const sound = useSoundEffects()
@@ -451,6 +500,10 @@ export default function App() {
     if (pathfinding.isSelectingTarget && node) {
       pathfinding.completePathSelection(node.id)
       sound.playPathFound()
+      // A caller may have queued a dramatic frame-fly (pendingFlyRef) before
+      // calling us; path selection consumes the click without selecting, so
+      // clear it here or the flag leaks onto the NEXT normal selection.
+      pendingFlyRef.current = false
       return
     }
     if (node) {
@@ -462,15 +515,69 @@ export default function App() {
 
   const handleInspectorNavigate = useCallback((node: GraphNode | null) => {
     if (!node) return
-
-    // Preserve path-selection behavior handled in handleNodeSelect.
+    // handleNodeSelect sets selectedNode; the select-to-focus effect then gently
+    // re-targets the node. Path-selection is handled inside handleNodeSelect (it
+    // returns early without selecting), so no camera move there.
     handleNodeSelect(node)
+  }, [handleNodeSelect])
 
-    // Keep camera navigation for normal inspector navigation.
-    if (!pathfinding.isSelectingTarget) {
-      navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
-    }
-  }, [handleNodeSelect, pathfinding.isSelectingTarget])
+  // Clicking a search result should fly in + frame the node (it may be far
+  // off-screen), unlike a direct graph click which keeps the gentle re-target.
+  const handleResultSelect = useCallback((node: GraphNode) => {
+    pendingFlyRef.current = true
+    handleNodeSelect(node)
+  }, [handleNodeSelect])
+
+  // Clicking ANY search result, including one not in the loaded scene. In-graph →
+  // the gentle fly + frame above. Off-graph → fetch its neighborhood and merge the
+  // center + neighbors as a connected cluster (not a lone dot), then fly to it. The
+  // neighbors fetch reuses the exact query key + params the Inspector's
+  // useGraphNeighbors uses, so the cache dedupes and the Inspector won't refetch.
+  const NEIGHBOR_PARAMS = useMemo(
+    () => ({ depth: 1, includeSemantic: true, semanticLimit: 5 }),
+    [],
+  )
+  const handleRemoteResultSelect = useCallback(
+    async (node: GraphNode) => {
+      if (visibleNodeIds.has(node.id)) {
+        // Already loaded — select the REAL graph node, not the degraded recall
+        // node (whose type is the generic "Memory" + fallback color), so the
+        // Inspector header shows the true type/color.
+        const real = nodes.find((n) => n.id === node.id) ?? node
+        handleResultSelect(real)
+        return
+      }
+      const typeColors = data?.meta?.type_colors ?? {}
+      setLoadingResultId(node.id)
+      try {
+        const neighbors = await queryClient.fetchQuery({
+          queryKey: ['graph', 'neighbors', node.id, NEIGHBOR_PARAMS],
+          queryFn: () => fetchGraphNeighbors(node.id, NEIGHBOR_PARAMS),
+        })
+        graph.expand({
+          centerId: node.id,
+          nodes: [neighbors.center, ...neighbors.graph_neighbors, ...neighbors.semantic_neighbors],
+          edges: neighbors.edges,
+        })
+        // Select the normalized center (real type/color from the graph) so the
+        // Inspector header is correct and the select-to-focus effect flies to it.
+        pendingFlyRef.current = true
+        handleNodeSelect(normalizeNode(neighbors.center, typeColors))
+      } catch {
+        // Fetch failed — inject the bare result so the click never dead-ends.
+        graph.expand({ centerId: node.id, nodes: [node], edges: [] })
+        pendingFlyRef.current = true
+        handleNodeSelect(node)
+      } finally {
+        // Only the request that set the id clears it. A later off-graph click
+        // can replace loadingResultId with its own id while this fetch is still
+        // in flight; an unconditional clear would re-enable that newer row
+        // mid-load (loadingResultId is global, one row at a time).
+        setLoadingResultId((current) => (current === node.id ? null : current))
+      }
+    },
+    [visibleNodeIds, nodes, handleResultSelect, handleNodeSelect, graph, queryClient, data?.meta?.type_colors, NEIGHBOR_PARAMS],
+  )
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
@@ -483,6 +590,9 @@ export default function App() {
     // Play search sound on typing (only if term changed and is not empty)
     if (term.length > 0) {
       sound.playSearch()
+      // Starting/changing a search shows the results list — clear any open node so
+      // the sidebar switches from single-node detail back to the results view.
+      setSelectedNode(null)
     }
     setSearchTerm(term)
   }, [sound.playSearch])
@@ -578,8 +688,8 @@ export default function App() {
   nodesRef.current = nodes
 
   const breadcrumbNavigate = useCallback((node: GraphNode) => {
+    // The select-to-focus effect flies + frames the node once selectedNode is set.
     setSelectedNode(node)
-    navigateForBookmarksRef.current?.(node.x ?? 0, node.y ?? 0, node.z ?? 0)
   }, [])
 
   const handleBreadcrumbBack = useCallback(() => {
@@ -656,13 +766,17 @@ export default function App() {
           onClearAll={filterChips.clearAll}
           matchingCount={clientVisibleNodeCount}
           totalCount={nodes.length}
+          searchActive={searchActive}
+          searchResultCount={recall.data?.count}
+          searchResultCapped={recall.data?.capped}
+          searchLoading={recall.isLoading}
         />
 
         <StatsBar
           stats={data?.stats}
           isLoading={isLoading}
-          clientVisibleCount={clientVisibleNodeCount}
-          hasClientFilter={filterChips.hasActiveFilters}
+          clientVisibleCount={tagVisibleNodeCount}
+          hasClientFilter={tagCloud.hasActiveFilter}
         />
 
         {/* Performance Mode Toggle */}
@@ -931,19 +1045,41 @@ export default function App() {
             onExpand={() => setIsInspectorOpen(true)}
             onCollapse={() => setIsInspectorOpen(false)}
           >
-            <Inspector
-              key={selectedNode?.id ?? 'none'}
-              node={selectedNode}
-              onClose={() => setSelectedNode(null)}
-              onNavigate={handleInspectorNavigate}
-              onStartPathfinding={pathfinding.startPathSelection}
-              isPathSelecting={pathfinding.isSelectingTarget}
-              onTagClick={handleInspectorTagClick}
-              onRelationshipTypeClick={handleRelationshipTypeClick}
-              relationshipVisibility={relationshipVisibility}
-              onExpand={graph.expand}
-              existingNodeIds={visibleNodeIds}
-            />
+            {/* Sidebar view derived from (selectedNode, searchTerm):
+                 selected node → detail; else active search → results list; else empty. */}
+            {!selectedNode && searchTerm.trim() ? (
+              <SearchResultsList
+                nodes={nodes}
+                results={recall.data?.results ?? EMPTY_NODES}
+                count={recall.data?.count}
+                capped={recall.data?.capped}
+                isLoading={recall.isLoading}
+                isError={recall.isError}
+                loadingId={loadingResultId}
+                inGraphIds={visibleNodeIds}
+                searchTerm={searchTerm}
+                onSelect={handleRemoteResultSelect}
+              />
+            ) : (
+              <Inspector
+                key={selectedNode?.id ?? 'none'}
+                node={selectedNode}
+                onClose={() => setSelectedNode(null)}
+                onNavigate={handleInspectorNavigate}
+                onBackToResults={
+                  selectedNode && searchTerm.trim()
+                    ? () => setSelectedNode(null)
+                    : undefined
+                }
+                onStartPathfinding={pathfinding.startPathSelection}
+                isPathSelecting={pathfinding.isSelectingTarget}
+                onTagClick={handleInspectorTagClick}
+                onRelationshipTypeClick={handleRelationshipTypeClick}
+                relationshipVisibility={relationshipVisibility}
+                onExpand={graph.expand}
+                existingNodeIds={visibleNodeIds}
+              />
+            )}
           </Panel>
         </PanelGroup>
 

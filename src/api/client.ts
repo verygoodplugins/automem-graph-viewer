@@ -1,4 +1,5 @@
-import type { GraphSnapshot, GraphNeighbors, GraphStats } from '../lib/types'
+import type { GraphSnapshot, GraphNeighbors, GraphStats, GraphNode } from '../lib/types'
+import { normalizeNode } from '../lib/normalizeNode'
 
 /**
  * Detect if running in embedded mode (served from /viewer/ on same origin).
@@ -167,6 +168,83 @@ export async function fetchGraphNeighbors(
 export async function fetchGraphStats(): Promise<GraphStats> {
   const response = await fetch(`${getApiBase()}/graph/stats`, { headers: getAuthHeaders() })
   return handleResponse<GraphStats>(response)
+}
+
+/**
+ * The backend hard-caps /recall at RECALL_MAX_LIMIT (100). Mirror it so we never
+ * request more than the server returns; `count >= MAX_RECALL` means "capped —
+ * there may be more; refine the query" (rendered as "100+").
+ */
+export const MAX_RECALL = 100
+
+/** One memory in a /recall response: id at top level, the record nested under `memory`. */
+export interface RecallResult {
+  id: string
+  memory?: {
+    content?: string
+    type?: string
+    importance?: number
+    confidence?: number
+    tags?: string[]
+    timestamp?: string
+    updated_at?: string
+    metadata?: Record<string, unknown>
+    last_accessed?: string
+    relevance_score?: number
+    tag_prefixes?: string[]
+  }
+}
+
+export interface RecallResponse {
+  /** Number of results returned (== results.length, capped at the requested limit). */
+  count: number
+  results: RecallResult[]
+  query?: string
+}
+
+/**
+ * Whole-store semantic search. Unlike the client-side filter over the loaded
+ * snapshot, this reaches every memory in the store. Debounce the query upstream
+ * (the SearchBar already debounces 300ms).
+ */
+export async function fetchRecall(query: string, limit: number = MAX_RECALL): Promise<RecallResponse> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('query', query)
+  searchParams.set('limit', String(Math.min(Math.max(1, limit), MAX_RECALL)))
+
+  const url = `${getApiBase()}/recall?${searchParams}`
+  const response = await fetch(url, { headers: getAuthHeaders() })
+  return handleResponse<RecallResponse>(response)
+}
+
+/**
+ * Map a /recall result into a GraphNode, run through the same `normalizeNode` the
+ * expand reducer uses so list rows have a color and a later merge stays
+ * consistent. `result.memory.type` is the generic "Memory" today, so the node
+ * shows the fallback color until it's expanded into the graph and gets real edges.
+ */
+export function mapRecallResultToNode(
+  result: RecallResult,
+  typeColors: Record<string, string> = {},
+): GraphNode {
+  const m = result.memory ?? {}
+  // color/radius/opacity intentionally absent — normalizeNode fills them (and
+  // coerces a non-finite importance/confidence, and a non-union type, to safe
+  // defaults). The object satisfies `RawNode` (only `id` required), so no cast.
+  return normalizeNode(
+    {
+      id: result.id,
+      content: m.content ?? '',
+      type: m.type ?? 'Memory',
+      importance: m.importance,
+      confidence: m.confidence,
+      tags: m.tags ?? [],
+      timestamp: m.timestamp ?? '',
+      updated_at: m.updated_at,
+      metadata: m.metadata,
+    },
+    typeColors,
+  )
 }
 
 export async function updateMemory(

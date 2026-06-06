@@ -14,7 +14,14 @@
  * - Hand gestures: Two-hand pinch to pan/zoom/rotate; one-hand fist grab to pan
  */
 
-import { useRef, useMemo, useState, useCallback, useEffect } from "react";
+import {
+  useRef,
+  useMemo,
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Text, Billboard } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
@@ -62,6 +69,7 @@ import {
   PinchPreSelectHighlight,
 } from "./SelectionHighlight";
 import { getEdgeStyle } from "../lib/edgeStyles";
+import { matchesSearch } from "../lib/searchMatch";
 import { EdgeParticles } from "./EdgeParticles";
 import { MiniMap } from "./MiniMap";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -129,9 +137,12 @@ interface GraphCanvasProps {
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
   // Expose an imperative camera-navigation handle to the parent (used by the
-  // inspector navigate action and breadcrumb jumps).
+  // inspector navigate action, search-result clicks, and breadcrumb jumps).
+  // The parent passes a node id (+ optional frame flag); GraphCanvas resolves the
+  // node's LIVE position and either re-targets gently or flies in + frames it.
+  // The minimap keeps the cheaper re-target navigator.
   onNavigateForBookmarks?: (
-    fn: (x: number, y: number, z?: number) => void,
+    fn: (nodeId: string, frame?: boolean) => void,
   ) => void;
   // Pathfinding: highlight path nodes and edges
   pathNodeIds?: Set<string>;
@@ -200,10 +211,18 @@ export function GraphCanvas({
     navigateToRef.current?.(x, y);
   }, []);
 
-  // Callback to capture and expose navigation function
+  // Minimap navigation: cheap re-target only (no dolly).
   const handleNavigateToReady = useCallback(
     (fn: (x: number, y: number) => void) => {
       navigateToRef.current = fn;
+    },
+    [],
+  );
+
+  // Parent navigation: "fly in + frame" a node by id. Routed to the
+  // inspector/search/breadcrumb handle so result clicks travel to + frame the node.
+  const handleNavigateToNodeReady = useCallback(
+    (fn: (nodeId: string, frame?: boolean) => void) => {
       onNavigateForBookmarks?.(fn);
     },
     [onNavigateForBookmarks],
@@ -300,6 +319,7 @@ export function GraphCanvas({
           onCameraStateChange={setCameraState}
           onLayoutNodesChange={setLayoutNodesForMiniMap}
           onNavigateToReady={handleNavigateToReady}
+          onNavigateToNodeReady={handleNavigateToNodeReady}
           pathNodeIds={pathNodeIds}
           pathEdgeKeys={pathEdgeKeys}
           pathSourceId={pathSourceId}
@@ -344,6 +364,9 @@ interface SceneProps extends Omit<
   }) => void;
   onLayoutNodesChange?: (nodes: SimulationNode[]) => void;
   onNavigateToReady?: (fn: (x: number, y: number) => void) => void;
+  onNavigateToNodeReady?: (
+    fn: (nodeId: string, frame?: boolean) => void,
+  ) => void;
   // Pathfinding
   pathNodeIds?: Set<string>;
   pathEdgeKeys?: Set<string>;
@@ -382,6 +405,7 @@ function Scene({
   onCameraStateChange,
   onLayoutNodesChange,
   onNavigateToReady,
+  onNavigateToNodeReady,
   pathNodeIds,
   pathEdgeKeys,
   pathSourceId,
@@ -401,6 +425,20 @@ function Scene({
     reheat,
     layoutTick,
   } = useForceLayout({ nodes, edges, forceConfig, expansionAnchors });
+
+  // Live, always-current view of the simulated nodes. navigateToNode reads this
+  // by id so it flies to a node's CURRENT position — the snapshot node objects
+  // App holds don't carry the in-place simulation x/y/z, only layoutNodes do.
+  const layoutNodesRef = useRef(layoutNodes);
+  layoutNodesRef.current = layoutNodes;
+
+  // Live view of whether the sim is still settling. A frame-fly to a freshly
+  // injected off-graph node must KEEP following it: the append-settle moves that
+  // node for ~1–2s after the 600ms fly would otherwise end, leaving the camera
+  // frozen on empty space. navigateToNode reads this each frame to decide when
+  // to stop tracking.
+  const simRef = useRef(isSimulating);
+  simRef.current = isSimulating;
 
   // Depth-based selection dimming: auto-spotlight when a node is selected
   const focusStates = useMemo(() => {
@@ -677,6 +715,115 @@ function Scene({
     [camera],
   );
 
+  // Navigate the camera to a node, resolved by id from the LIVE simulated
+  // positions (layoutNodesRef) — the snapshot node objects App holds don't carry
+  // the in-place x/y/z, so we must look up the current position here.
+  //
+  // Two modes, so we don't disrupt existing interactions:
+  //  - frame=false (default): gentle re-target — pan the orbit center to the node
+  //    and KEEP the current zoom (400ms). Used for direct graph clicks, keyboard
+  //    nav, breadcrumb/inspector jumps — the pre-existing behavior.
+  //  - frame=true: fly in AND frame — animate the orbit target and the camera
+  //    distance (preserving view direction) so the node ends up centered and close
+  //    (600ms). Used for clicking a search result, which should "travel to" a node
+  //    that may be far off-screen. Distance floors closer than navigateToCluster.
+  const navigateToNode = useCallback(
+    (nodeId: string, frame = false) => {
+      if (!controlsRef.current) return;
+      const node = layoutNodesRef.current.find((n) => n.id === nodeId);
+      if (!node) return;
+      const controls = controlsRef.current;
+      const startTarget = controls.target.clone();
+      const startCamPos = camera.position.clone();
+
+      // Plain fly: ease the orbit target to a FIXED endpoint over 400ms. Used for
+      // breadcrumb / inspector / linear-nav jumps to nodes already settled in the
+      // graph, where the target isn't moving — no need to track it.
+      if (!frame) {
+        const endTarget = new THREE.Vector3(
+          node.x ?? 0,
+          node.y ?? 0,
+          node.z ?? 0,
+        );
+        const startTime = performance.now();
+        const duration = 400;
+        const animate = () => {
+          const progress = Math.min(
+            (performance.now() - startTime) / duration,
+            1,
+          );
+          const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
+          controls.target.lerpVectors(startTarget, endTarget, eased);
+          controls.update();
+          if (progress < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+        return;
+      }
+
+      // Frame-fly: travel to AND frame the node, then KEEP following it until the
+      // sim settles. Clicking a search result can inject a fresh off-graph node;
+      // the append-settle then pulls it inward for ~1–2s AFTER a one-shot 600ms
+      // fly would end — freezing the camera on empty space with the cluster shoved
+      // into a corner (worse the farther the node seeds from origin). So instead of
+      // capturing the endpoint once, we re-read the node's LIVE position each frame,
+      // recompute the framed endpoint against it, and keep ticking past the ease
+      // until isSimulating goes false (≈3s hard cap as a backstop only).
+      const fovRad =
+        ((camera as THREE.PerspectiveCamera).fov / 2) * (Math.PI / 180);
+      const r = node.radius && node.radius > 0 ? node.radius : 2;
+      // Frame the node + a little margin; much closer floor than the cluster path.
+      const desiredDistance = Math.max(
+        8,
+        Math.min(120, (r / Math.tan(fovRad)) * 8),
+      );
+      // Approach direction is captured ONCE so the camera doesn't swing around the
+      // moving target; only the distance-to-node endpoint tracks the live position.
+      const viewOffset = startCamPos
+        .clone()
+        .sub(startTarget)
+        .normalize()
+        .multiplyScalar(desiredDistance);
+      const liveTarget = new THREE.Vector3();
+      const liveCamPos = new THREE.Vector3();
+
+      const startTime = performance.now();
+      const duration = 600;
+      const settleCap = 3000; // backstop only; isSimulating is the real terminator
+
+      const animate = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
+
+        // Re-read the node each frame: the sim mutates positions, and on a
+        // snapshot reset the node may vanish — bail cleanly if so.
+        const live = layoutNodesRef.current.find((n) => n.id === nodeId);
+        if (!live) return;
+        liveTarget.set(live.x ?? 0, live.y ?? 0, live.z ?? 0);
+        liveCamPos.copy(liveTarget).add(viewOffset);
+
+        // Once the ease completes (eased === 1) these lerps land exactly on the
+        // live endpoints, so the camera locks onto the node and follows its drift.
+        controls.target.lerpVectors(startTarget, liveTarget, eased);
+        camera.position.lerpVectors(startCamPos, liveCamPos, eased);
+        controls.update();
+
+        // Keep ticking while the ease is unfinished, OR while the sim is still
+        // moving the node (under the cap). Stop once framed AND settled.
+        if (progress < 1 || (simRef.current && elapsed < settleCap)) {
+          requestAnimationFrame(animate);
+        }
+      };
+      requestAnimationFrame(animate);
+    },
+    [camera],
+  );
+
+  useEffect(() => {
+    onNavigateToNodeReady?.(navigateToNode);
+  }, [navigateToNode, onNavigateToNodeReady]);
+
   const handleClusterClick = useCallback(
     (cluster: Cluster) => {
       navigateToCluster(
@@ -773,21 +920,20 @@ function Scene({
     [layoutNodes],
   );
 
-  // Filter nodes based on search
-  const searchLower = searchTerm.toLowerCase();
+  // Filter nodes based on search (trimmed, so the graph spotlight, the sidebar
+  // results list, and the count badge all resolve to the exact same match set).
+  const searchLower = searchTerm.trim().toLowerCase();
   const matchingIds = useMemo(() => {
-    if (!searchTerm) return new Set<string>();
+    if (!searchLower) return new Set<string>();
     return new Set(
-      layoutNodes
-        .filter(
-          (n) =>
-            n.content.toLowerCase().includes(searchLower) ||
-            n.tags.some((t) => t.toLowerCase().includes(searchLower)) ||
-            n.type.toLowerCase().includes(searchLower),
-        )
-        .map((n) => n.id),
+      layoutNodes.filter((n) => matchesSearch(n, searchLower)).map((n) => n.id),
     );
-  }, [layoutNodes, searchLower, searchTerm]);
+  }, [layoutNodes, searchLower]);
+
+  // Spotlight is active only in the "results view": a search is running, it has
+  // matches, and NO node is selected. When a node is selected we hand the scene
+  // over to selection-focus dimming instead (one clean switch, no double-dim).
+  const spotlightActive = !selectedNode && matchingIds.size > 0;
 
   // Get connected node IDs when a node is selected
   const connectedIds = useMemo(() => {
@@ -1197,6 +1343,7 @@ function Scene({
           hoveredNode={hoveredNode}
           searchTerm={searchTerm}
           matchingIds={matchingIds}
+          spotlightActive={spotlightActive}
           connectedIds={connectedIds}
           onNodeSelect={onNodeSelect}
           onNodeHover={onNodeHover}
@@ -1526,6 +1673,7 @@ interface InstancedNodesProps {
   hoveredNode: GraphNode | null;
   searchTerm: string;
   matchingIds: Set<string>;
+  spotlightActive: boolean;
   connectedIds: Set<string>;
   onNodeSelect: (node: GraphNode | null) => void;
   onNodeHover: (node: GraphNode | null) => void;
@@ -1547,6 +1695,7 @@ function InstancedNodes({
   hoveredNode,
   searchTerm,
   matchingIds,
+  spotlightActive,
   connectedIds,
   onNodeSelect,
   onNodeHover,
@@ -1706,12 +1855,33 @@ function InstancedNodes({
     }
   }, [nodeCount]);
 
+  // Seed the per-instance color buffer BEFORE the first render. The material's
+  // onBeforeCompile injects `emissive * vColor`, but `vColor` only exists once an
+  // instanceColor buffer is present (USE_INSTANCING_COLOR). On a cold load the
+  // material can otherwise compile before the first per-frame setColorAt runs,
+  // producing "vColor: undeclared identifier" — and the constant customProgramCacheKey
+  // then locks that broken program in, leaving the graph blank. useLayoutEffect runs
+  // before paint (and before the rAF render loop), so the buffer always exists at
+  // first compile. The real colors are written every frame in useFrame.
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh || nodeCount === 0) return;
+    const seed = new THREE.Color(1, 1, 1);
+    for (let i = 0; i < nodeCount; i++) mesh.setColorAt(i, seed);
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [nodeCount]);
+
   // Temp objects for matrix calculations (reused to avoid GC)
   const tempMatrix = useMemo(() => new THREE.Matrix4(), []);
   const tempColor = useMemo(() => new THREE.Color(), []);
   const tempPosition = useMemo(() => new THREE.Vector3(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tempScale = useMemo(() => new THREE.Vector3(), []);
+  // Reused spotlight colors (allocate once, never per-node/per-frame):
+  // a neutral slate to desaturate dimmed non-matches, and the cold "accent"
+  // near-white (--accent) to keep off-focus search matches faintly visible.
+  const dimGrey = useMemo(() => new THREE.Color("#6b7280"), []);
+  const accentColor = useMemo(() => new THREE.Color("#e8ecf4"), []);
 
   // Update instance matrices and colors each frame
   useFrame((_, delta) => {
@@ -1723,6 +1893,11 @@ function InstancedNodes({
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoveredNode?.id === node.id;
       const isSearchMatch = !!searchTerm && matchingIds.has(node.id);
+      // Detail view: a search match that isn't the selection or one of its
+      // neighbors. Keep it faintly accent-lit so results aren't lost behind the
+      // selection-focus dimming.
+      const isOffFocusMatch =
+        !!selectedNode && isSearchMatch && !connectedIds.has(node.id);
 
       // Pathfinding state
       const isPathSource = pathSourceId === node.id;
@@ -1740,8 +1915,12 @@ function InstancedNodes({
         !hasTagFilterRef.current ||
         (tagFilteredNodeIdsRef.current?.has(node.id) ?? true);
 
+      // Search dimming only applies in the results view (spotlightActive). When a
+      // node is selected, spotlightActive is false so selection-focus owns the
+      // dimming — no double-dim. When there are zero matches, spotlightActive is
+      // also false, so a non-matching search never dims the whole graph to black.
       const isDimmed = !!(
-        (searchTerm && !matchingIds.has(node.id)) ||
+        (spotlightActive && !matchingIds.has(node.id)) ||
         (hasActivePath && !isInPath) ||
         (hasTagFilterRef.current && !isMatchingTagFilter)
       );
@@ -1759,6 +1938,10 @@ function InstancedNodes({
           targetScale = Math.max(targetScale, 1.4);
         } else if (isInPath) {
           targetScale = Math.max(targetScale, 1.2);
+        }
+        // Spotlight: scale matched nodes up so they read as the focus of the view.
+        if (spotlightActive && isSearchMatch) {
+          targetScale = Math.max(targetScale, 1.3);
         }
       }
       targetScalesRef.current[i] = targetScale;
@@ -1816,6 +1999,11 @@ function InstancedNodes({
         1 + Math.sin(breathingTime + nodePhase) * breathingAmplitude;
       finalScale *= breathing;
 
+      // Keep off-focus search matches readable as markers (not specks) in detail view.
+      if (isOffFocusMatch) {
+        finalScale = Math.max(finalScale, newScale * 1.1);
+      }
+
       // Read from animated positions if available, else fall back to node coords
       const ap = animatedPositions.current;
       const px = ap.length > i * 3 ? ap[i * 3] : (node.x ?? 0);
@@ -1842,15 +2030,26 @@ function InstancedNodes({
       }
 
       if (isDimmed && !isInPath) {
-        tempColor.multiplyScalar(0.5);
+        if (spotlightActive && !matchingIds.has(node.id)) {
+          // Results view: push non-matches well back — desaturate toward neutral
+          // slate, then darken hard so the matched nodes own the scene.
+          tempColor.lerp(dimGrey, 0.5);
+          tempColor.multiplyScalar(0.2);
+        } else {
+          // Path / tag-filter dimming keeps its softer treatment.
+          tempColor.multiplyScalar(0.5);
+        }
       } else if (
         isSelected ||
         isHovered ||
         isSearchMatch ||
         isInPath
       ) {
-        // Brighten selected/hovered/path nodes
-        tempColor.multiplyScalar(isInPath ? 1.3 : 1.2);
+        // Brighten selected/hovered/path/match nodes. Spotlight matches get an
+        // extra push so they cross the bloom threshold and visibly glow.
+        let brightenFactor = isInPath ? 1.3 : 1.2;
+        if (spotlightActive && isSearchMatch) brightenFactor = 1.6;
+        tempColor.multiplyScalar(brightenFactor);
       } else {
         // Recent nodes glow brighter - subtle pulsing brightness
         const nodeTimestamp = node.timestamp
@@ -1872,6 +2071,12 @@ function InstancedNodes({
       // Apply focus mode opacity (but don't dim path nodes)
       if (!isInPath) {
         tempColor.multiplyScalar(focusOpacity);
+      }
+      // Detail view: lift off-focus search matches back toward the accent so they
+      // stay visible markers instead of sinking into the selection-focus dim.
+      // Applied AFTER focusOpacity so the depth-dim can't swallow them.
+      if (isOffFocusMatch) {
+        tempColor.lerp(accentColor, 0.4);
       }
       mesh.setColorAt(i, tempColor);
     });
@@ -1905,6 +2110,14 @@ function InstancedNodes({
     },
     [camera, pointer, raycaster, nodeIndexMap, onNodeHover],
   );
+
+  // Don't render the mesh with zero instances. Doing so makes the material's
+  // emissive*vColor shader compile WITHOUT an instanceColor buffer (no vColor) —
+  // and the constant customProgramCacheKey would then cache that broken program
+  // for the lifetime of the GL context, leaving the graph blank even after data
+  // arrives. The mesh remounts (keyed on nodeCount) once nodes exist and the
+  // useLayoutEffect above has seeded instanceColor, so the first compile is valid.
+  if (nodeCount === 0) return null;
 
   return (
     <instancedMesh

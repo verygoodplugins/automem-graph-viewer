@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useCallback } from 'react'
 import type { GraphNode, GraphEdge, GraphSnapshot } from '@/lib/types'
+import { normalizeNode } from '@/lib/normalizeNode'
 
 /**
  * The live, growing in-memory graph that sits on top of the immutable snapshot.
@@ -25,39 +26,11 @@ import type { GraphNode, GraphEdge, GraphSnapshot } from '@/lib/types'
  *    min/max scan — collapsing the whole graph on the first expand. Normalizing in
  *    the reducer is the single mitigation and also makes expansion correct against
  *    today's backend without waiting on the server shape-parity change.
+ *
+ * `normalizeNode` itself lives in `@/lib/normalizeNode` (a pure, non-React
+ * module) so the API client can reuse the exact same normalization without
+ * pulling hook code into the API layer.
  */
-
-const FALLBACK_COLOR = '#94A3B8'
-
-function finiteOr(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-/**
- * Coerce any merged node into the exact shape a snapshot node has, with safe
- * defaults for every field the simulation, inspector, or time-travel touch.
- * Idempotent on already-complete snapshot nodes.
- */
-function normalizeNode(node: GraphNode, typeColors: Record<string, string>): GraphNode {
-  const importance = finiteOr(node.importance, 0.5)
-  const confidence = finiteOr(node.confidence, 0.8)
-  const type = node.type ?? 'Memory'
-  return {
-    ...node,
-    type,
-    importance,
-    confidence,
-    tags: node.tags ?? [],
-    // Neighbors omit timestamp; '' → new Date('') is NaN, which useTimeTravel
-    // already guards (isNaN check), so the node simply hides during active
-    // time-travel until the backend backfills a real timestamp.
-    timestamp: node.timestamp ?? '',
-    color: node.color ?? typeColors[type] ?? FALLBACK_COLOR,
-    // Backend formulas, used only when a field is missing/non-finite.
-    radius: finiteOr(node.radius, 0.5 + importance * 1.5),
-    opacity: finiteOr(node.opacity, 0.4 + confidence * 0.6),
-  }
-}
 
 interface ExpandableGraphState {
   nodes: GraphNode[]
