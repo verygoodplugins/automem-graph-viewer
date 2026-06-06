@@ -141,8 +141,11 @@ export function getSnapshotCap(): number {
     const fromUrl = new URLSearchParams(window.location.search).get('cap')
     const fromStorage = window.localStorage.getItem('automem_snapshot_cap')
     const raw = fromUrl ?? fromStorage
-    const n = raw == null ? NaN : Number(raw)
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : MAX_SNAPSHOT
+    // Floor BEFORE the positivity check: a sub-unit cap like `0.5` would pass
+    // `n > 0` yet floor to 0, seeding limit=0 (the empty-snapshot bug). Require
+    // the floored value to be >= 1.
+    const n = raw == null ? NaN : Math.floor(Number(raw))
+    return Number.isFinite(n) && n >= 1 ? n : MAX_SNAPSHOT
   } catch {
     return MAX_SNAPSHOT
   }

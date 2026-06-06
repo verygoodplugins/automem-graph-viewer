@@ -215,21 +215,36 @@ export function useClusterDetection({
       .slice(0, MAX_ACTIVE_CLUSTERS)
 
     // Claim smallest-first so a node in {Railway:49, Jack:419} lands in Railway.
-    const assignOrder = [...activeSet].sort(
-      (a, b) =>
-        a.uniqueNodes.length - b.uniqueNodes.length ||
-        (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
-    )
-    const assignedNodes = new Map<string, GraphNode[]>()
-    const claimed = new Set<string>()
-    for (const c of assignOrder) {
-      const mine: GraphNode[] = []
-      for (const n of c.uniqueNodes) {
-        if (claimed.has(n.id)) continue
-        claimed.add(n.id)
-        mine.push(n)
+    // Then drop clusters that retained < 2 members and reassign: a node claimed
+    // by a now-dropped cluster must be re-offered to a larger surviving cluster
+    // it also belongs to, else it ends up claimed-but-unassigned — no anchor
+    // (yanked to origin by the `?? 0` fallback) and no hull. Dropping a cluster
+    // only FREES nodes, so survivors' memberships grow monotonically across
+    // passes; the loop converges in at most one drop per cluster.
+    let surviving = [...activeSet]
+    let assignedNodes = new Map<string, GraphNode[]>()
+    for (let pass = 0; pass <= activeSet.length; pass++) {
+      const assignOrder = [...surviving].sort(
+        (a, b) =>
+          a.uniqueNodes.length - b.uniqueNodes.length ||
+          (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+      )
+      assignedNodes = new Map<string, GraphNode[]>()
+      const claimed = new Set<string>()
+      for (const c of assignOrder) {
+        const mine: GraphNode[] = []
+        for (const n of c.uniqueNodes) {
+          if (claimed.has(n.id)) continue
+          claimed.add(n.id)
+          mine.push(n)
+        }
+        assignedNodes.set(c.key, mine)
       }
-      assignedNodes.set(c.key, mine)
+      const next = surviving.filter(
+        (c) => (assignedNodes.get(c.key)?.length ?? 0) >= 2,
+      )
+      if (next.length === surviving.length) break // stable — nothing dropped
+      surviving = next
     }
 
     interface PendingCluster {
@@ -239,9 +254,9 @@ export function useClusterDetection({
       radius: number
     }
 
-    // Keep active clusters that retained >= 2 members after assignment, then sort
-    // by key for a STABLE Fibonacci anchor assignment across renders.
-    const pending: PendingCluster[] = activeSet
+    // `surviving` already holds only clusters with >= 2 assigned members (the
+    // loop's stable state). Sort by key for a STABLE Fibonacci anchor across renders.
+    const pending: PendingCluster[] = surviving
       .map((c) => {
         const nodes = assignedNodes.get(c.key) ?? []
         return {
@@ -251,7 +266,6 @@ export function useClusterDetection({
           radius: CLUSTER_BASE + RADIUS_K * Math.cbrt(Math.max(nodes.length, 1)),
         }
       })
-      .filter((p) => p.nodes.length >= 2)
       .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
 
     const clusterCount = pending.length
