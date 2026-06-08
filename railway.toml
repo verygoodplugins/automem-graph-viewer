@@ -1,8 +1,15 @@
-# railway.toml - Graph Viewer service configuration
+# railway.toml - source-linked fallback configuration.
+#
+# Production Railway deployments should use the published GHCR image
+# (`ghcr.io/verygoodplugins/automem-graph-viewer:stable`) so Railway does not
+# spend compute rebuilding this frontend. This file is kept for preview/source
+# deployments and intentionally mirrors the Dockerfile used to publish GHCR.
 
 [build]
-builder = "RAILPACK"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
+healthcheckPath = "/"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5

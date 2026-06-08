@@ -1,4 +1,4 @@
-# Dockerfile for Graph Viewer - paths relative to packages/graph-viewer
+# Dockerfile for the standalone Graph Viewer service.
 FROM node:20-slim AS builder
 
 WORKDIR /app
