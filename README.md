@@ -30,7 +30,7 @@ Default runtime URL: `http://localhost:3000`
 Copy `.env.example` and set values as needed:
 
 - `VITE_API_TARGET=...` for local dev proxy target (optional)
-- `VITE_BASE_PATH=/` when building for non-root subpath hosting (optional)
+- `VITE_BASE_PATH=/viewer/` when building for non-root subpath hosting (optional)
 
 Production Railway deployments normally do not need viewer environment variables. The viewer stores only browser-side API config (`automem_server`, `automem_token`) and should never receive database credentials or Railway private-network URLs.
 
