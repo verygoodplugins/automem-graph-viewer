@@ -4,6 +4,16 @@ Standalone graph viewer frontend/runtime for AutoMem.
 
 This repository is the source of truth for the visualizer service. The `automem` API keeps `/viewer` compatibility routes as the canonical entrypoint: the API bootstraps users into this standalone app, preserves URL hash tokens, and passes `server=<automem-origin>` so the browser calls the AutoMem API instead of any Railway-private host.
 
+## Screenshots
+
+![AutoMem Graph Viewer overview with memory graph, search, stats, and timeline controls](docs/img/graph-viewer-overview.png)
+
+| Whole-store search | Memory inspector |
+|---|---|
+| ![Search results sidebar with By Tags clustering active](docs/img/graph-viewer-search.png) | ![Selected memory inspector with tags, metadata, and relationship controls](docs/img/graph-viewer-inspector.png) |
+
+![Graph settings drawer showing clustering mode controls](docs/img/graph-viewer-settings-clustering.png)
+
 ## Requirements
 
 - Node.js 20+
