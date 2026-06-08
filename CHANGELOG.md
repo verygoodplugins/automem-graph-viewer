@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog, and this project uses
 [Conventional Commits](https://www.conventionalcommits.org/) with Release Please.
 
+## [0.4.0](https://github.com/verygoodplugins/automem-graph-viewer/compare/automem-graph-viewer-v0.3.0...automem-graph-viewer-v0.4.0) (2026-06-08)
+
+
+### Features
+
+* default to 2000-node sample with fitted camera ([#12](https://github.com/verygoodplugins/automem-graph-viewer/issues/12)) ([6d59a17](https://github.com/verygoodplugins/automem-graph-viewer/commit/6d59a17359d004633ad7a211299bcebb05160fcc))
+* **search:** query the whole store via /recall and inject off-graph results ([#15](https://github.com/verygoodplugins/automem-graph-viewer/issues/15)) ([2ad7b11](https://github.com/verygoodplugins/automem-graph-viewer/commit/2ad7b119eb69ad9a1bf5f1272dd7cfde7f4f082a))
+
 ## [0.3.0](https://github.com/verygoodplugins/automem-graph-viewer/compare/automem-graph-viewer-v0.2.0...automem-graph-viewer-v0.3.0) (2026-04-24)
 
 
