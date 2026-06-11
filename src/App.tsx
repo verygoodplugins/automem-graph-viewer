@@ -686,7 +686,7 @@ export default function App() {
   // Inspector relationship type toggle
   const handleRelationshipTypeClick = useCallback((type: RelationType) => {
     setRelationshipVisibility((prev) => ({ ...prev, [type]: !prev[type] }))
-  }, [])
+  }, [setRelationshipVisibility])
 
   const handleFilterChange = useCallback((newFilters: Partial<FilterState>) => {
     setFilters(prev => ({ ...prev, ...newFilters }))
@@ -694,11 +694,11 @@ export default function App() {
 
   const handleForceConfigChange = useCallback((config: Partial<ForceConfig>) => {
     setForceConfig(prev => ({ ...prev, ...config }))
-  }, [])
+  }, [setForceConfig])
 
   const handleDisplayConfigChange = useCallback((config: Partial<DisplayConfig>) => {
     setDisplayConfig(prev => ({ ...prev, ...config }))
-  }, [])
+  }, [setDisplayConfig])
 
   const prevClusterModeRef = useRef<ClusterConfig['mode']>(DEFAULT_CLUSTER_CONFIG.mode)
 
@@ -708,11 +708,11 @@ export default function App() {
       prevClusterModeRef.current = config.mode
       showStatus(CLUSTER_MODE_LABELS[config.mode] || `Cluster mode: ${config.mode}`)
     }
-  }, [showStatus])
+  }, [setClusterConfig, showStatus])
 
   const handleRelationshipVisibilityChange = useCallback((visibility: Partial<RelationshipVisibility>) => {
     setRelationshipVisibility(prev => ({ ...prev, ...visibility }))
-  }, [])
+  }, [setRelationshipVisibility])
 
   const handleReheat = useCallback(() => {
     reheatFn?.()
@@ -720,11 +720,11 @@ export default function App() {
 
   const handleResetForces = useCallback(() => {
     setForceConfig(DEFAULT_FORCE_CONFIG)
-  }, [])
+  }, [setForceConfig])
 
   const handleToggleLabels = useCallback(() => {
     setDisplayConfig(prev => ({ ...prev, showLabels: !prev.showLabels }))
-  }, [])
+  }, [setDisplayConfig])
 
   // Keyboard navigation
   const handleStartPathfindingFromKeyboard = useCallback(() => {
