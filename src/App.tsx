@@ -16,7 +16,7 @@ import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
 import { SearchResultsList } from './components/SearchResultsList'
-import { SearchBar } from './components/SearchBar'
+import { SearchBar, type RecentSearch } from './components/SearchBar'
 import { TokenPrompt } from './components/TokenPrompt'
 import { StatsBar } from './components/StatsBar'
 import { Breadcrumbs } from './components/Breadcrumbs'
@@ -347,6 +347,26 @@ export default function App() {
   // what makes search find memories that aren't in the loaded snapshot — the fix
   // for "search only sees ~2k of ~120k". Disabled until the term is non-empty.
   const recall = useRecall(searchTerm, data?.meta?.type_colors)
+
+  // Recent searches: a query is "real" once it has results AND survives a
+  // 2.5s dwell (typing intermediates like "groo" → "groover cur" cancel the
+  // timer, so prefixes never pollute the list). Last 5, most recent first.
+  const [recentSearches, setRecentSearches] = usePersistentState<RecentSearch[]>(
+    'automem_recent_searches',
+    []
+  )
+  useEffect(() => {
+    const term = searchTerm.trim()
+    if (!term || !recall.data) return
+    const { count, capped } = recall.data
+    const timer = window.setTimeout(() => {
+      setRecentSearches((prev) => {
+        const rest = prev.filter((r) => r.term.toLowerCase() !== term.toLowerCase())
+        return [{ term, count, capped }, ...rest].slice(0, 5)
+      })
+    }, 2500)
+    return () => window.clearTimeout(timer)
+  }, [searchTerm, recall.data, setRecentSearches])
 
   // Stable data references. Once the snapshot has seeded the expandable graph,
   // read from it (so expansions are visible); fall back to the raw snapshot for
@@ -935,6 +955,7 @@ export default function App() {
           searchResultCount={recall.data?.count}
           searchResultCapped={recall.data?.capped}
           searchLoading={recall.isLoading}
+          recentSearches={recentSearches}
         />
 
         <StatsBar
