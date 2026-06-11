@@ -1,8 +1,110 @@
 import { useRef, useMemo, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { Billboard, Text } from '@react-three/drei'
 import * as THREE from 'three'
 import type { SimulationNode, GraphNode } from '../lib/types'
 import { PRE_SELECT } from '../lib/palette'
+
+/**
+ * Expansion frontier cue: a slowly-rotating dashed ring + "+N more" count
+ * around the selected node when it still has unloaded neighbors. The dashes
+ * read as "incomplete boundary — there is more world here"; a fully-expanded
+ * node renders nothing, so absence reads as exhausted. Focus-and-expand is the
+ * app's core model, and this is the canvas-side answer to "where is there
+ * more?" (previously only visible as a disabled button deep in the inspector).
+ */
+interface ExpansionFrontierRingProps {
+  node: SimulationNode | null
+  count: number
+  /** World-space ring radius (caller scales off node radius × nodeSizeScale). */
+  radius: number
+  animatedPositions?: React.MutableRefObject<Float32Array>
+  nodeIdToIdx?: Map<string, number>
+}
+
+// Dash segmentation for the frontier ring: N short ring-arc meshes around the
+// circle (mesh arcs, not THREE.Line — LineDashedMaterial misrendered under the
+// instanced-emissive scene as a filled disc).
+const FRONTIER_DASHES = 14
+const FRONTIER_DASH_FRACTION = 0.62 // portion of each slice that is dash (vs gap)
+
+export function ExpansionFrontierRing({
+  node,
+  count,
+  radius,
+  animatedPositions,
+  nodeIdToIdx,
+}: ExpansionFrontierRingProps) {
+  const groupRef = useRef<THREE.Group>(null)
+  const ringRef = useRef<THREE.Group>(null)
+
+  // One shared unit arc geometry + material for all dashes; each dash is a
+  // rotated instance of the same arc. Scaled to `radius` on the parent group.
+  const dashGeometry = useMemo(() => {
+    const sliceAngle = (Math.PI * 2) / FRONTIER_DASHES
+    return new THREE.RingGeometry(0.94, 1.0, 10, 1, 0, sliceAngle * FRONTIER_DASH_FRACTION)
+  }, [])
+  const dashMaterial = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: '#e8ecf4',
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    []
+  )
+
+  useFrame((state) => {
+    if (!node) return
+    if (groupRef.current && animatedPositions && nodeIdToIdx) {
+      const idx = nodeIdToIdx.get(node.id)
+      if (idx !== undefined) {
+        const ap = animatedPositions.current
+        const off = idx * 3
+        if (off + 2 < ap.length) {
+          groupRef.current.position.set(ap[off], ap[off + 1], ap[off + 2])
+        }
+      }
+    }
+    // Slow rotation keeps the dashes alive without demanding attention.
+    if (ringRef.current) {
+      ringRef.current.rotation.z = state.clock.elapsedTime * 0.35
+    }
+  })
+
+  if (!node || count <= 0) return null
+
+  return (
+    <group ref={groupRef} position={[node.x || 0, node.y || 0, node.z || 0]}>
+      <Billboard>
+        <group ref={ringRef} scale={radius}>
+          {Array.from({ length: FRONTIER_DASHES }, (_, i) => (
+            <mesh
+              key={i}
+              geometry={dashGeometry}
+              material={dashMaterial}
+              rotation={[0, 0, (i * Math.PI * 2) / FRONTIER_DASHES]}
+            />
+          ))}
+        </group>
+        <Text
+          position={[0, -(radius + 1.6), 0]}
+          fontSize={1.8}
+          color="#e8ecf4"
+          fillOpacity={0.75}
+          anchorX="center"
+          anchorY="top"
+          outlineWidth={0.08}
+          outlineColor="#000000"
+        >
+          {`+${count} more`}
+        </Text>
+      </Billboard>
+    </group>
+  )
+}
 
 /**
  * Visual feedback for direct pinch selection ("pick the berry")

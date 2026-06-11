@@ -3,7 +3,7 @@ import { Keyboard, Settings } from 'lucide-react'
 
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useQueryClient } from '@tanstack/react-query'
-import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
+import { useGraphSnapshot, useGraphNeighbors, useRecall } from './hooks/useGraphData'
 import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { normalizeNode } from './lib/normalizeNode'
 import {
@@ -142,7 +142,10 @@ export default function App() {
   const [performanceMode, setPerformanceMode] = useState(false)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<{
+    text: string
+    action?: { label: string; onClick: () => void }
+  } | null>(null)
   const statusTimeoutRef = useRef<number | null>(null)
 
   const canvasContainerRef = useRef<HTMLDivElement>(null)
@@ -523,16 +526,84 @@ export default function App() {
     return nodes.find(n => n.id === pathfinding.targetId) ?? null
   }, [pathfinding.targetId, nodes])
 
-  const showStatus = useCallback((message: string) => {
-    setStatusMessage(message)
-    if (statusTimeoutRef.current !== null) {
-      window.clearTimeout(statusTimeoutRef.current)
+  const showStatus = useCallback(
+    (
+      message: string,
+      opts?: { actionLabel: string; onAction: () => void; durationMs?: number }
+    ) => {
+      setStatusMessage(
+        opts
+          ? { text: message, action: { label: opts.actionLabel, onClick: opts.onAction } }
+          : { text: message }
+      )
+      if (statusTimeoutRef.current !== null) {
+        window.clearTimeout(statusTimeoutRef.current)
+      }
+      statusTimeoutRef.current = window.setTimeout(() => {
+        setStatusMessage(null)
+        statusTimeoutRef.current = null
+      }, opts?.durationMs ?? 1800)
+    },
+    []
+  )
+
+  // Acknowledge the silent URL-token handshake. A shared /viewer/#token= link
+  // auto-authenticates with zero feedback — confirm which server answered, once,
+  // on the first successful load. Standalone (typed-in) auth already had its
+  // explicit Connect step, so it stays quiet.
+  const connectionToastShownRef = useRef(false)
+  useEffect(() => {
+    if (!data || connectionToastShownRef.current) return
+    connectionToastShownRef.current = true
+    const info = getConnectionInfo()
+    if (info.embedded || info.tokenFromUrl) {
+      let host = info.serverUrl
+      try {
+        host = new URL(info.serverUrl).host
+      } catch {
+        // Relative base — keep as-is.
+      }
+      showStatus(`Connected to ${host}`)
     }
-    statusTimeoutRef.current = window.setTimeout(() => {
-      setStatusMessage(null)
-      statusTimeoutRef.current = null
-    }, 1800)
-  }, [])
+  }, [data, showStatus])
+
+  // Sign out / re-enter credentials: URL-borne tokens (?token=, #token=) outrank
+  // localStorage in the auth chain, so clearing storage alone wouldn't sign a
+  // shared-link session out — strip them from the URL too, then TokenPrompt
+  // renders naturally via isAuthenticated.
+  const handleReenterCredentials = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('token')
+    if (url.hash) {
+      const hashParams = new URLSearchParams(url.hash.slice(1))
+      hashParams.delete('token')
+      const rest = hashParams.toString()
+      url.hash = rest ? `#${rest}` : ''
+    }
+    window.history.replaceState(null, '', url.toString())
+    clearAuth()
+  }, [clearAuth])
+
+  // Settings → Connection section. Recomputed when the panel opens (token /
+  // server state lives in localStorage + URL, both cheap reads).
+  const connectionInfo = useMemo(() => {
+    if (!settingsPanelOpen) return undefined
+    const info = getConnectionInfo()
+    return {
+      serverUrl: info.serverUrl,
+      token: info.token,
+      tokenFromUrl: info.tokenFromUrl,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsPanelOpen, isAuthenticated])
+
+  // Auth rejections deserve their own story: a bad shared-link token used to
+  // surface as a generic "Connection Error" + Retry, a dead end that retries
+  // into the same 401 forever.
+  const isAuthError = useMemo(
+    () => !!error && isAuthErrorMessage((error as Error).message ?? ''),
+    [error]
+  )
 
   // Acknowledge the silent URL-token handshake. A shared /viewer/#token= link
   // auto-authenticates with zero feedback — confirm which server answered, once,
@@ -676,6 +747,60 @@ export default function App() {
     },
     [visibleNodeIds, nodes, handleResultSelect, handleNodeSelect, graph, queryClient, data?.meta?.type_colors, NEIGHBOR_PARAMS],
   )
+
+  // Expansion frontier: how many of the selected node's neighbors are NOT yet
+  // in view. Shares the Inspector's exact query key, so the two dedupe to a
+  // single request when both mount; the hook can still fetch on its own when
+  // the cache is cold or stale. Drives the dashed "+N more" ring on the canvas.
+  const selectedNeighbors = useGraphNeighbors(selectedNode?.id ?? null, NEIGHBOR_PARAMS)
+  const frontierCount = useMemo(() => {
+    const d = selectedNeighbors.data
+    if (!d || !selectedNode) return 0
+    const seen = new Set<string>()
+    let count = 0
+    for (const n of [...d.graph_neighbors, ...d.semantic_neighbors]) {
+      if (!n.id || seen.has(n.id) || n.id === selectedNode.id) continue
+      seen.add(n.id)
+      if (!visibleNodeIds.has(n.id)) count++
+    }
+    return count
+  }, [selectedNeighbors.data, visibleNodeIds, selectedNode])
+
+  // Announce arrivals: every expansion (inspector "Expand into graph" or an
+  // off-graph search-result injection) gets a toast naming the anchor, with a
+  // single-level Undo (tail-only removal — see useExpandableGraph invariants).
+  // Keyed on lastExpansion identity (not newNodeIds) so an edges-only
+  // expansion — all neighbor nodes already in view, new connections discovered
+  // — announces itself too instead of merging silently.
+  const prevLastExpansionRef = useRef(graph.lastExpansion)
+  const { undoLastExpansion } = graph
+  useEffect(() => {
+    const last = graph.lastExpansion
+    if (last === prevLastExpansionRef.current) return
+    prevLastExpansionRef.current = last
+    if (!last) return // reset/undo cleared it — nothing to announce
+    const nodeCount = last.nodeIds.length
+    const edgeCount = last.edgeIds.length
+    if (nodeCount === 0 && edgeCount === 0) return
+    const center = rawNodes.find((n) => n.id === last.centerId)
+    const title = center
+      ? `"${center.content.slice(0, 28)}${center.content.length > 28 ? '…' : ''}"`
+      : 'the selection'
+    const message =
+      nodeCount > 0
+        ? `+${nodeCount} ${nodeCount === 1 ? 'memory' : 'memories'} connected to ${title}`
+        : `+${edgeCount} new ${edgeCount === 1 ? 'connection' : 'connections'} to ${title}`
+    const removedIds = new Set(last.nodeIds)
+    showStatus(message, {
+      actionLabel: 'Undo',
+      onAction: () => {
+        undoLastExpansion()
+        // Don't leave a removed node selected — it no longer exists in view.
+        setSelectedNode((prev) => (prev && removedIds.has(prev.id) ? null : prev))
+      },
+      durationMs: 6000,
+    })
+  }, [graph.lastExpansion, undoLastExpansion, rawNodes, showStatus])
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
@@ -873,6 +998,8 @@ export default function App() {
         <StatsBar
           stats={data?.stats}
           isLoading={isLoading}
+          inViewNodeCount={nodes.length}
+          inViewEdgeCount={filteredEdges.length}
           clientVisibleCount={tagVisibleNodeCount}
           hasClientFilter={tagCloud.hasActiveFilter}
         />
@@ -1139,6 +1266,8 @@ export default function App() {
                 relationshipVisibility={relationshipVisibility}
                 typeColors={data?.meta?.type_colors}
                 expansionAnchors={graph.expansionAnchors}
+                newNodeIds={graph.newNodeIds}
+                frontierCount={frontierCount}
                 onReheatReady={setReheatFn}
                 onResetViewReady={setResetViewFn}
                 onNavigateForBookmarks={(fn) => { navigateForBookmarksRef.current = fn }}
@@ -1335,9 +1464,26 @@ export default function App() {
           role="status"
           aria-live="polite"
           aria-atomic="true"
-          className="fixed bottom-5 right-5 z-[95] rounded-lg border border-hairline bg-surface-1 px-3 py-2 text-sm text-ink shadow-xl"
+          className="fixed bottom-5 right-5 z-[95] flex items-center gap-3 rounded-lg border border-hairline bg-surface-1 px-3 py-2 text-sm text-ink shadow-xl"
         >
-          {statusMessage}
+          <span>{statusMessage.text}</span>
+          {statusMessage.action && (
+            <button
+              type="button"
+              onClick={() => {
+                // Cancel the auto-dismiss so it can't clear a LATER toast.
+                if (statusTimeoutRef.current !== null) {
+                  window.clearTimeout(statusTimeoutRef.current)
+                  statusTimeoutRef.current = null
+                }
+                statusMessage.action!.onClick()
+                setStatusMessage(null)
+              }}
+              className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-accent text-xs font-medium transition-colors"
+            >
+              {statusMessage.action.label}
+            </button>
+          )}
         </div>
       )}
     </div>

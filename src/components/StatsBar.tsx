@@ -10,6 +10,13 @@ interface StatsBarProps {
     sample_ratio: number
   }
   isLoading: boolean
+  /**
+   * LIVE in-view counts (snapshot + expansions, after client filters). The
+   * snapshot's returned_nodes/returned_edges go stale the moment an expansion
+   * merges nodes in — "in view" must count what's actually rendered.
+   */
+  inViewNodeCount?: number
+  inViewEdgeCount?: number
   clientVisibleCount?: number
   hasClientFilter?: boolean
 }
@@ -20,7 +27,14 @@ interface StatsBarProps {
  * "in store" = everything on the server. The two never get conflated into one
  * bare number — that's how "2 of 2,000" used to read as exhaustive.
  */
-export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter }: StatsBarProps) {
+export function StatsBar({
+  stats,
+  isLoading,
+  inViewNodeCount,
+  inViewEdgeCount,
+  clientVisibleCount,
+  hasClientFilter,
+}: StatsBarProps) {
   if (isLoading || !stats) {
     return (
       <div className="flex items-center gap-4 text-sm text-ink-3">
@@ -34,7 +48,9 @@ export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter
 
   // Client filter active: "42 of 500 in view"
   const showFilteredCount = hasClientFilter && clientVisibleCount != null
-  const hasMoreInStore = stats.total_nodes > stats.returned_nodes
+  const nodesInView = inViewNodeCount ?? stats.returned_nodes
+  const edgesInView = inViewEdgeCount ?? stats.returned_edges
+  const hasMoreInStore = stats.total_nodes > nodesInView
 
   return (
     <div className="flex items-center gap-4 text-sm">
@@ -53,12 +69,12 @@ export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter
                 {clientVisibleCount.toLocaleString()}
               </span>
               <span className="text-ink-3">
-                {' '}of {stats.returned_nodes.toLocaleString()} in view
+                {' '}of {nodesInView.toLocaleString()} in view
               </span>
             </>
           ) : (
             <>
-              <span className="text-ink-2">{stats.returned_nodes.toLocaleString()}</span>
+              <span className="text-ink-2">{nodesInView.toLocaleString()}</span>
               <span className="text-ink-3"> in view</span>
             </>
           )}
@@ -75,8 +91,8 @@ export function StatsBar({ stats, isLoading, clientVisibleCount, hasClientFilter
       >
         <GitBranch className="w-4 h-4 text-ink-3" />
         <span className="font-mono">
-          <span className="text-ink-2">{stats.returned_edges.toLocaleString()}</span>
-          {stats.total_edges > stats.returned_edges && (
+          <span className="text-ink-2">{edgesInView.toLocaleString()}</span>
+          {stats.total_edges > edgesInView && (
             <span className="text-ink-3">
               {' '}/ {stats.total_edges.toLocaleString()}
             </span>
