@@ -68,6 +68,40 @@ export function PathfindingOverlay({
     )
   }
 
+  // No path among LOADED memories. Scope honesty: the scene holds a bounded
+  // overview (+expansions) of a much larger store, so Dijkstra failing here
+  // usually means "no path loaded", not "no path exists". Say so instead of
+  // silently vanishing (the previous behavior).
+  if (!currentPath && sourceNode && targetNode) {
+    return (
+      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
+        <div className="bg-surface-1 backdrop-blur-sm border border-hairline rounded-lg shadow-elev-2 overflow-hidden max-w-md">
+          <div className="px-4 py-3 flex items-start gap-3">
+            <svg className="w-5 h-5 text-warn flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+            </svg>
+            <div className="flex-1">
+              <div className="text-ink font-medium">No path among loaded memories</div>
+              <div className="text-ink-3 text-sm mt-1">
+                A path may exist through memories not yet in view. Expand each
+                endpoint ("Expand into graph" in the inspector), then try again.
+              </div>
+            </div>
+            <button
+              onClick={onClear}
+              className="p-1 rounded hover:bg-white/10 text-ink-3 hover:text-ink transition-colors flex-shrink-0"
+              title="Dismiss"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Show path info when path is found
   if (currentPath && sourceNode && targetNode) {
     return (

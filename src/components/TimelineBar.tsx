@@ -192,10 +192,13 @@ export function TimelineBar({
               </span>
             </div>
 
-            {/* Memory count */}
-            <div className="flex items-center gap-2">
+            {/* Memory count — scoped to the loaded scene, not the whole store */}
+            <div
+              className="flex items-center gap-2"
+              title="Time travel scrubs the memories currently in view, not the whole store"
+            >
               <span className="font-mono text-lg font-semibold text-ink">{visibleCount}</span>
-              <span className="text-sm text-ink-3">/ {totalCount} memories</span>
+              <span className="text-sm text-ink-3">/ {totalCount} in view</span>
             </div>
           </div>
 

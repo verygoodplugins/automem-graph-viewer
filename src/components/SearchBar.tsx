@@ -170,7 +170,7 @@ export function SearchBar({
                 handleClear()
               }
             }}
-            placeholder={hasChips ? 'Search...' : 'Search memories, tags, or types...'}
+            placeholder={hasChips ? 'Search...' : 'Search all memories, tags, or types...'}
             className="w-full pl-9 pr-9 py-2 bg-black/30 border border-white/10 rounded-lg focus:border-accent focus:ring-1 focus:ring-accent outline-none transition-colors text-sm text-ink placeholder-ink-3"
           />
           {localValue && (
@@ -194,7 +194,11 @@ export function SearchBar({
       {showSearchCount && (
         <span
           className="font-mono text-xs text-ink-3 whitespace-nowrap flex-shrink-0"
-          title="Matches across all your memories"
+          title={
+            'Search covers your entire memory store. The graph only highlights matches ' +
+            'already in view — click a result to bring it in.' +
+            (searchResultCapped ? ' Capped at 100: add a word or tag to narrow it down.' : '')
+          }
         >
           {searchResultCount == null ? (
             '…'
@@ -204,8 +208,7 @@ export function SearchBar({
                 {searchResultCount.toLocaleString()}
                 {searchResultCapped ? '+' : ''}
               </span>
-              {' '}
-              {searchResultCount === 1 ? 'match' : 'matches'}
+              {' in store'}
             </>
           )}
         </span>

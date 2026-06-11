@@ -1,11 +1,12 @@
 import type { GraphSnapshot, GraphNeighbors, GraphStats, GraphNode } from '../lib/types'
 import { normalizeNode } from '../lib/normalizeNode'
+import { resolveTypeColors } from '../lib/palette'
 
 /**
  * Detect if running in embedded mode (served from /viewer/ on same origin).
  * In embedded mode, we use relative URLs and get token from URL hash.
  */
-function isEmbeddedMode(): boolean {
+export function isEmbeddedMode(): boolean {
   return window.location.pathname.startsWith('/viewer')
 }
 
@@ -96,6 +97,40 @@ export function isAuthenticated(): boolean {
   return !!getToken()
 }
 
+/**
+ * Classify an API error message as an auth rejection (bad/expired token).
+ * Used to (a) skip pointless retries — a 401 won't fix itself — and (b) show
+ * the "Access denied" card with a recovery path instead of the generic error.
+ */
+export function isAuthErrorMessage(message: string): boolean {
+  return /\b(401|403)\b|unauthorized|forbidden|invalid\s+(api\s+)?(key|token)/i.test(message)
+}
+
+export interface ConnectionInfo {
+  /** Resolved server origin the browser is actually talking to. */
+  serverUrl: string
+  /** The active token (whatever source won the priority chain), or null. */
+  token: string | null
+  /** Served from /viewer/ on the AutoMem API origin. */
+  embedded: boolean
+  /**
+   * Token came from the URL (?token= or #token=) rather than localStorage —
+   * i.e. a shared viewer link. Clearing stored credentials alone won't sign
+   * such a session out; the URL has to be stripped too.
+   */
+  tokenFromUrl: boolean
+}
+
+/** What the session is connected to and how — for the Settings "Connection" section. */
+export function getConnectionInfo(): ConnectionInfo {
+  return {
+    serverUrl: getApiBase() || window.location.origin,
+    token: getToken(),
+    embedded: isEmbeddedMode(),
+    tokenFromUrl: !!(getTokenFromQuery() || getTokenFromHash()),
+  }
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text()
@@ -166,7 +201,22 @@ export async function fetchGraphSnapshot(params: SnapshotParams = {}): Promise<G
 
   const url = `${getApiBase()}/graph/snapshot?${searchParams}`
   const response = await fetch(url, { headers: getAuthHeaders() })
-  return handleResponse<GraphSnapshot>(response)
+  const snapshot = await handleResponse<GraphSnapshot>(response)
+
+  // Canonicalize colors at the chokepoint: everything downstream (the expand
+  // reducer's normalizeNode, tag chips, settings swatches, cluster detection)
+  // reads `meta.type_colors`, so resolving here makes every surface agree.
+  // Nodes are recolored too so even the brief pre-reset render (App's raw
+  // snapshot fallback) shows canonical hues.
+  const type_colors = resolveTypeColors(snapshot.meta?.type_colors)
+  return {
+    ...snapshot,
+    nodes: snapshot.nodes.map((n) => ({
+      ...n,
+      color: type_colors[n.type] ?? n.color,
+    })),
+    meta: { ...snapshot.meta, type_colors },
+  }
 }
 
 export interface NeighborsParams {
@@ -194,7 +244,11 @@ export async function fetchGraphNeighbors(
 
 export async function fetchGraphStats(): Promise<GraphStats> {
   const response = await fetch(`${getApiBase()}/graph/stats`, { headers: getAuthHeaders() })
-  return handleResponse<GraphStats>(response)
+  const stats = await handleResponse<GraphStats>(response)
+  return {
+    ...stats,
+    meta: { ...stats.meta, type_colors: resolveTypeColors(stats.meta?.type_colors) },
+  }
 }
 
 /**

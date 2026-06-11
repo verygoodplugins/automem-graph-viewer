@@ -81,6 +81,7 @@ import {
   PinchPreSelectHighlight,
 } from "./SelectionHighlight";
 import { getEdgeStyle } from "../lib/edgeStyles";
+import { TRACE_START, TRACE_END, TRACE_PATH } from "../lib/palette";
 import { matchesSearch } from "../lib/searchMatch";
 import { EdgeParticles } from "./EdgeParticles";
 import { MiniMap } from "./MiniMap";
@@ -100,18 +101,6 @@ function useIPhoneUrl() {
 
   return iphoneUrl;
 }
-
-// Vibrant type colors for clear visual distinction on dark backgrounds
-const VIBRANT_TYPE_COLORS: Record<string, string> = {
-  Decision: "#f59e0b",
-  Pattern: "#10b981",
-  Insight: "#8b5cf6",
-  Preference: "#ec4899",
-  Context: "#3b82f6",
-  Style: "#06b6d4",
-  Habit: "#f97316",
-  Memory: "#6366f1",
-};
 
 // Performance constants
 const SPHERE_SEGMENTS = 12; // Reduced from 32 - good enough for small spheres
@@ -1604,7 +1593,7 @@ function BatchedEdges({
       const style = getEdgeStyle(edge.type);
 
       const color = isInPath
-        ? new THREE.Color("#00d4ff")
+        ? new THREE.Color(TRACE_PATH)
         : new THREE.Color(style.color);
 
       const sourceFocus = focusStates.get(edge.source)?.opacity ?? 1;
@@ -2178,17 +2167,16 @@ function InstancedNodes({
 
       // Set color with special handling for path nodes
       if (isPathSource) {
-        // Source node: bright green
-        tempColor.set("#22c55e");
+        tempColor.set(TRACE_START);
       } else if (isPathTarget) {
-        // Target node: bright red/orange
-        tempColor.set("#ef4444");
+        tempColor.set(TRACE_END);
       } else if (isInPath) {
-        // Intermediate path nodes: electric cyan
-        tempColor.set("#00d4ff");
+        tempColor.set(TRACE_PATH);
       } else {
-        // Use vibrant frontend palette, falling back to API color
-        tempColor.set(VIBRANT_TYPE_COLORS[node.type] || node.color);
+        // node.color is canonical — normalized from the resolved palette
+        // (lib/palette.ts) so the scene, minimap, tag cloud, and inspector
+        // all render the same hue per type.
+        tempColor.set(node.color);
       }
 
       if (isDimmed && !isInPath) {

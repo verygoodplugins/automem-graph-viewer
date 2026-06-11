@@ -10,6 +10,7 @@
 
 import { useRef, useEffect, useCallback, useMemo } from 'react'
 import type { SimulationNode, GraphNode } from '../lib/types'
+import { FALLBACK_NODE_COLOR } from '../lib/palette'
 
 interface MiniMapProps {
   nodes: SimulationNode[]
@@ -19,18 +20,6 @@ interface MiniMapProps {
   onNavigate: (x: number, y: number) => void
   visible?: boolean
   size?: number
-}
-
-// Type colors (simplified from main graph)
-const TYPE_COLORS: Record<string, string> = {
-  Decision: '#f59e0b',
-  Pattern: '#8b5cf6',
-  Preference: '#3b82f6',
-  Style: '#ec4899',
-  Habit: '#10b981',
-  Insight: '#06b6d4',
-  Context: '#6366f1',
-  Memory: '#6b7280',
 }
 
 export function MiniMap({
@@ -118,7 +107,8 @@ export function MiniMap({
     nodes.forEach(node => {
       const pos = worldToCanvas(node.x ?? 0, node.y ?? 0)
       const isSelected = selectedNode?.id === node.id
-      const nodeColor = TYPE_COLORS[node.type] || TYPE_COLORS.Memory
+      // node.color is the canonical palette color (same hue as the 3D scene).
+      const nodeColor = node.color || FALLBACK_NODE_COLOR
 
       ctx.beginPath()
       ctx.arc(pos.x, pos.y, isSelected ? 4 : 2, 0, Math.PI * 2)

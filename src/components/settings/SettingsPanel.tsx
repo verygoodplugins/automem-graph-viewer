@@ -3,6 +3,7 @@ import { SettingsSection } from './SettingsSection'
 import { SliderControl } from './SliderControl'
 import { RangeSliderControl } from './RangeSliderControl'
 import { ToggleControl } from './ToggleControl'
+import { EDGE_STYLES, type EdgeStyle } from '../../lib/edgeStyles'
 import type {
   ForceConfig,
   DisplayConfig,
@@ -14,20 +15,25 @@ import type {
   FilterState,
 } from '../../lib/types'
 
-// Relationship type metadata for display
-const RELATIONSHIP_INFO: Record<RelationType, { label: string; color: string; style: string }> = {
-  RELATES_TO: { label: 'Relates To', color: '#94A3B8', style: 'dotted' },
-  LEADS_TO: { label: 'Leads To', color: '#3B82F6', style: 'solid' },
-  OCCURRED_BEFORE: { label: 'Occurred Before', color: '#6B7280', style: 'dashed' },
-  PREFERS_OVER: { label: 'Prefers Over', color: '#8B5CF6', style: 'solid' },
-  EXEMPLIFIES: { label: 'Exemplifies', color: '#10B981', style: 'dotted' },
-  CONTRADICTS: { label: 'Contradicts', color: '#EF4444', style: 'dashed' },
-  REINFORCES: { label: 'Reinforces', color: '#22C55E', style: 'dotted' },
-  INVALIDATED_BY: { label: 'Invalidated By', color: '#F97316', style: 'dashed' },
-  EVOLVED_INTO: { label: 'Evolved Into', color: '#06B6D4', style: 'solid' },
-  DERIVED_FROM: { label: 'Derived From', color: '#A855F7', style: 'solid' },
-  PART_OF: { label: 'Part Of', color: '#64748B', style: 'solid' },
-}
+// Relationship display metadata, derived from the canonical edge styles so the
+// settings swatches always match what the renderer actually draws.
+const RELATIONSHIP_INFO = Object.fromEntries(
+  (Object.entries(EDGE_STYLES) as [RelationType, EdgeStyle][]).map(
+    ([type, style]) => [
+      type,
+      {
+        label: style.label,
+        color: style.color,
+        style:
+          style.dashPattern == null
+            ? 'solid'
+            : style.dashPattern[0] <= 2
+              ? 'dotted'
+              : 'dashed',
+      },
+    ],
+  ),
+) as Record<RelationType, { label: string; color: string; style: string }>
 
 const MEMORY_TYPES: MemoryType[] = [
   'Decision', 'Pattern', 'Preference', 'Style',
@@ -68,6 +74,21 @@ interface SettingsPanelProps {
   onSoundEnabledChange: (enabled: boolean) => void
   soundVolume: number
   onSoundVolumeChange: (volume: number) => void
+  // Reset every persisted setting (forces, display, clustering, relationships)
+  onResetAll?: () => void
+  // Connection visibility: which server, which token, how to sign out
+  connection?: {
+    serverUrl: string
+    token: string | null
+    tokenFromUrl: boolean
+  }
+  onDisconnect?: () => void
+}
+
+function maskToken(token: string | null): string {
+  if (!token) return '—'
+  if (token.length <= 8) return '••••'
+  return `${token.slice(0, 4)}••••${token.slice(-4)}`
 }
 
 export function SettingsPanel({
@@ -90,6 +111,9 @@ export function SettingsPanel({
   onSoundEnabledChange,
   soundVolume,
   onSoundVolumeChange,
+  onResetAll,
+  connection,
+  onDisconnect,
 }: SettingsPanelProps) {
   if (!isOpen) return null
 
@@ -105,13 +129,25 @@ export function SettingsPanel({
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
         <h2 className="font-display text-sm font-semibold text-ink">Graph Settings</h2>
-        <button
-          onClick={onClose}
-          aria-label="Close settings"
-          className="p-2.5 rounded hover:bg-white/10 text-ink-3 hover:text-ink transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onResetAll && (
+            <button
+              onClick={onResetAll}
+              title="Reset every setting in this panel — physics, display, clustering, relationships, audio, tag mode — to defaults (settings persist across sessions). Filters are not affected."
+              className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-ink-3 hover:text-ink hover:bg-white/10 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset all
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            aria-label="Close settings"
+            className="p-2.5 rounded hover:bg-white/10 text-ink-3 hover:text-ink transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Scrollable content */}
@@ -471,6 +507,41 @@ export function SettingsPanel({
             )}
           </div>
         </SettingsSection>
+
+        {/* Connection Section — which server this session talks to, with which
+            token, and how to sign out. Previously invisible: embedded sessions
+            had no indication they were authenticated at all. */}
+        {connection && (
+          <SettingsSection title="Connection" defaultOpen={false}>
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <label className="text-xs text-ink-3">Server</label>
+                <div className="font-mono text-xs text-ink-2 break-all bg-black/30 border border-white/10 rounded px-2 py-1.5">
+                  {connection.serverUrl}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-ink-3">API token</label>
+                <div className="font-mono text-xs text-ink-2 bg-black/30 border border-white/10 rounded px-2 py-1.5">
+                  {maskToken(connection.token)}
+                </div>
+                {connection.tokenFromUrl && (
+                  <p className="text-[10px] text-ink-3 leading-relaxed">
+                    Token provided by this page's URL (shared viewer link).
+                  </p>
+                )}
+              </div>
+              {onDisconnect && (
+                <button
+                  onClick={onDisconnect}
+                  className="w-full py-2 bg-white/10 hover:bg-red-500/20 hover:text-red-400 text-ink-2 text-xs rounded transition-colors"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </SettingsSection>
+        )}
       </div>
     </div>
   )

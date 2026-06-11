@@ -2,6 +2,7 @@ import { useRef, useMemo, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { SimulationNode, GraphNode } from '../lib/types'
+import { PRE_SELECT } from '../lib/palette'
 
 /**
  * Visual feedback for direct pinch selection ("pick the berry")
@@ -67,7 +68,7 @@ export function PinchPreSelectHighlight({
   const displayNode = node || prevNode
   if (!displayNode || fadeRef.current < 0.01) return null
 
-  const nodeColor = color || '#fbbf24' // Amber/gold for pre-select
+  const nodeColor = color || PRE_SELECT
   const nodeRadius = displayNode.radius || 3
 
   // Ring sizes

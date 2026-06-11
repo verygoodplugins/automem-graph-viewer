@@ -13,6 +13,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { X, Search, ToggleLeft, ToggleRight, Trash2 } from 'lucide-react'
 import type { TagData } from '../hooks/useTagCloud'
+import { TYPE_COLORS } from '../lib/palette'
 
 interface TagCloudProps {
   tags: TagData[]
@@ -29,18 +30,6 @@ interface TagCloudProps {
   typeColors?: Record<string, string>
   visible: boolean
   onClose: () => void
-}
-
-// Default colors for memory types
-const DEFAULT_TYPE_COLORS: Record<string, string> = {
-  Decision: '#22c55e',
-  Pattern: '#8b5cf6',
-  Preference: '#f59e0b',
-  Style: '#ec4899',
-  Habit: '#06b6d4',
-  Insight: '#3b82f6',
-  Context: '#64748b',
-  Memory: '#6366f1',
 }
 
 export function TagCloud({
@@ -61,8 +50,12 @@ export function TagCloud({
   const [isAnimating, setIsAnimating] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Merge type colors with defaults
-  const colors = useMemo(() => ({ ...DEFAULT_TYPE_COLORS, ...typeColors }), [typeColors])
+  // typeColors is the resolved canonical palette from the API chokepoint;
+  // TYPE_COLORS backstops it before the first snapshot arrives.
+  const colors = useMemo<Record<string, string>>(
+    () => ({ ...TYPE_COLORS, ...typeColors }),
+    [typeColors]
+  )
 
   // Animate in/out
   useEffect(() => {
