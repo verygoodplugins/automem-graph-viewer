@@ -605,64 +605,6 @@ export default function App() {
     [error]
   )
 
-  // Acknowledge the silent URL-token handshake. A shared /viewer/#token= link
-  // auto-authenticates with zero feedback — confirm which server answered, once,
-  // on the first successful load. Standalone (typed-in) auth already had its
-  // explicit Connect step, so it stays quiet.
-  const connectionToastShownRef = useRef(false)
-  useEffect(() => {
-    if (!data || connectionToastShownRef.current) return
-    connectionToastShownRef.current = true
-    const info = getConnectionInfo()
-    if (info.embedded || info.tokenFromUrl) {
-      let host = info.serverUrl
-      try {
-        host = new URL(info.serverUrl).host
-      } catch {
-        // Relative base — keep as-is.
-      }
-      showStatus(`Connected to ${host}`)
-    }
-  }, [data, showStatus])
-
-  // Sign out / re-enter credentials: URL-borne tokens (?token=, #token=) outrank
-  // localStorage in the auth chain, so clearing storage alone wouldn't sign a
-  // shared-link session out — strip them from the URL too, then TokenPrompt
-  // renders naturally via isAuthenticated.
-  const handleReenterCredentials = useCallback(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('token')
-    if (url.hash) {
-      const hashParams = new URLSearchParams(url.hash.slice(1))
-      hashParams.delete('token')
-      const rest = hashParams.toString()
-      url.hash = rest ? `#${rest}` : ''
-    }
-    window.history.replaceState(null, '', url.toString())
-    clearAuth()
-  }, [clearAuth])
-
-  // Settings → Connection section. Recomputed when the panel opens (token /
-  // server state lives in localStorage + URL, both cheap reads).
-  const connectionInfo = useMemo(() => {
-    if (!settingsPanelOpen) return undefined
-    const info = getConnectionInfo()
-    return {
-      serverUrl: info.serverUrl,
-      token: info.token,
-      tokenFromUrl: info.tokenFromUrl,
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsPanelOpen, isAuthenticated])
-
-  // Auth rejections deserve their own story: a bad shared-link token used to
-  // surface as a generic "Connection Error" + Retry, a dead end that retries
-  // into the same 401 forever.
-  const isAuthError = useMemo(
-    () => !!error && isAuthErrorMessage((error as Error).message ?? ''),
-    [error]
-  )
-
   const { push: breadcrumbPush } = breadcrumbs
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
     // If we're in path selection mode and a node is clicked, complete the path
