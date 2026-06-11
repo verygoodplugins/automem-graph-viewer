@@ -1007,7 +1007,13 @@ export default function App() {
                 onPreviousPath={pathfinding.previousPath}
                 onCancel={pathfinding.cancelPathSelection}
                 onClear={pathfinding.clearPath}
-                visible={pathfinding.isSelectingTarget || pathfinding.hasPath}
+                visible={
+                  pathfinding.isSelectingTarget ||
+                  pathfinding.hasPath ||
+                  // targetId set with no paths = search ran and found nothing
+                  // among loaded memories — show the honest no-path card.
+                  (pathfinding.targetId != null && !pathfinding.hasPath)
+                }
               />
 
               {/* Time Travel Timeline */}
