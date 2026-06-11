@@ -58,7 +58,8 @@ export function SearchResultsList({
   // would silently filter results the user never asked to narrow — clear it
   // when the term changes. (Sort is a stable viewing preference; it stays.)
   useEffect(() => {
-    setTypeFilter(new Set())
+    // Keep identity when already empty — no churn on every keystroke.
+    setTypeFilter((prev) => (prev.size > 0 ? new Set<string>() : prev))
   }, [searchTerm])
 
   // Display list = server (semantic, whole-store) results in backend order, then
@@ -322,7 +323,9 @@ export function SearchResultsList({
         })}
         {visible.length === 0 && (
           <div className="p-4 text-center text-xs text-ink-3">
-            No {[...typeFilter].join(' / ')} results — clear the type filter above.
+            {typeFilter.size > 0
+              ? `No ${[...typeFilter].join(' / ')} results — clear the type filter above.`
+              : 'No results.'}
           </div>
         )}
       </div>

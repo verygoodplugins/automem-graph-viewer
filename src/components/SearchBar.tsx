@@ -72,6 +72,22 @@ export function SearchBar({
   }, [])
   const showRecent = focused && !localValue && recentSearches.length > 0 && !!dropdownRect
 
+  // Keyboard navigation for the dropdown happens ON THE INPUT (combobox
+  // pattern): focus never leaves it, so blur can't race the selection.
+  const [activeRecent, setActiveRecent] = useState(-1)
+  useEffect(() => {
+    if (!showRecent) setActiveRecent(-1)
+  }, [showRecent])
+
+  const pickRecent = useCallback(
+    (term: string) => {
+      setLocalValue(term)
+      onChange(term)
+      setFocused(false)
+    },
+    [onChange]
+  )
+
   const hasChips = chips.length > 0
   // During a text search the meaningful number is the whole-store match count
   // (from /recall), not "matching-local / loaded" — that would read as exhaustive.
@@ -195,7 +211,34 @@ export function SearchBar({
             onChange={(e) => setLocalValue(e.target.value)}
             onFocus={handleFocus}
             onBlur={() => setFocused(false)}
+            role="combobox"
+            aria-expanded={showRecent}
+            aria-controls="recent-searches-listbox"
+            aria-autocomplete="list"
             onKeyDown={(event) => {
+              if (showRecent) {
+                const n = recentSearches.length
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setActiveRecent((i) => (i + 1) % n)
+                  return
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setActiveRecent((i) => (i - 1 + n) % n)
+                  return
+                }
+                if (event.key === 'Enter' && activeRecent >= 0 && activeRecent < n) {
+                  event.preventDefault()
+                  pickRecent(recentSearches[activeRecent].term)
+                  return
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setFocused(false)
+                  return
+                }
+              }
               if (event.key === 'Escape' && localValue) {
                 event.preventDefault()
                 handleClear()
@@ -259,6 +302,9 @@ export function SearchBar({
       {showRecent &&
         createPortal(
           <div
+            id="recent-searches-listbox"
+            role="listbox"
+            aria-label="Recent searches"
             className="fixed z-[100] rounded-lg border border-hairline bg-surface-1 shadow-elev-2 overflow-hidden"
             style={{
               left: dropdownRect.left,
@@ -269,18 +315,20 @@ export function SearchBar({
             <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-ink-4">
               Recent searches
             </div>
-            {recentSearches.map((recent) => (
+            {recentSearches.map((recent, i) => (
               <button
                 key={recent.term}
                 type="button"
+                role="option"
+                aria-selected={i === activeRecent}
                 // mousedown (not click) so selection beats the input's blur.
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  setLocalValue(recent.term)
-                  onChange(recent.term)
-                  setFocused(false)
+                  pickRecent(recent.term)
                 }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-ink-2 hover:bg-white/10 text-left transition-colors"
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-ink-2 text-left transition-colors ${
+                  i === activeRecent ? 'bg-white/15' : 'hover:bg-white/10'
+                }`}
               >
                 <History className="w-3.5 h-3.5 text-ink-4 flex-shrink-0" />
                 <span className="truncate flex-1">{recent.term}</span>

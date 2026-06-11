@@ -359,6 +359,8 @@ export default function App() {
     const term = searchTerm.trim()
     if (!term || !recall.data) return
     const { count, capped } = recall.data
+    // A zero-result query isn't worth offering as a shortcut.
+    if (count === 0) return
     const timer = window.setTimeout(() => {
       setRecentSearches((prev) => {
         const rest = prev.filter((r) => r.term.toLowerCase() !== term.toLowerCase())
