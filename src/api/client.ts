@@ -97,6 +97,15 @@ export function isAuthenticated(): boolean {
   return !!getToken()
 }
 
+/**
+ * Classify an API error message as an auth rejection (bad/expired token).
+ * Used to (a) skip pointless retries — a 401 won't fix itself — and (b) show
+ * the "Access denied" card with a recovery path instead of the generic error.
+ */
+export function isAuthErrorMessage(message: string): boolean {
+  return /\b(401|403)\b|unauthorized|forbidden|invalid\s+(api\s+)?(key|token)/i.test(message)
+}
+
 export interface ConnectionInfo {
   /** Resolved server origin the browser is actually talking to. */
   serverUrl: string

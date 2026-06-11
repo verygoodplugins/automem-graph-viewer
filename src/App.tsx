@@ -6,7 +6,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
 import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { normalizeNode } from './lib/normalizeNode'
-import { fetchGraphNeighbors, getSnapshotCap, getConnectionInfo } from './api/client'
+import {
+  fetchGraphNeighbors,
+  getSnapshotCap,
+  getConnectionInfo,
+  isAuthErrorMessage,
+} from './api/client'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
@@ -565,11 +570,10 @@ export default function App() {
   // Auth rejections deserve their own story: a bad shared-link token used to
   // surface as a generic "Connection Error" + Retry, a dead end that retries
   // into the same 401 forever.
-  const isAuthError = useMemo(() => {
-    if (!error) return false
-    const message = (error as Error).message ?? ''
-    return /\b(401|403)\b|unauthorized|forbidden|invalid\s+(api\s+)?(key|token)/i.test(message)
-  }, [error])
+  const isAuthError = useMemo(
+    () => !!error && isAuthErrorMessage((error as Error).message ?? ''),
+    [error]
+  )
 
   const { push: breadcrumbPush } = breadcrumbs
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
