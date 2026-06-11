@@ -269,14 +269,6 @@ export default function App() {
       DEFAULT_RELATIONSHIP_VISIBILITY
     )
 
-  // One-click escape hatch from any persisted-settings tangle.
-  const handleResetAllSettings = useCallback(() => {
-    setForceConfig(DEFAULT_FORCE_CONFIG)
-    setDisplayConfig(DEFAULT_DISPLAY_CONFIG)
-    setClusterConfig(DEFAULT_CLUSTER_CONFIG)
-    setRelationshipVisibility(DEFAULT_RELATIONSHIP_VISIBILITY)
-  }, [setForceConfig, setDisplayConfig, setClusterConfig, setRelationshipVisibility])
-
   // Reheat callback - will be set by GraphCanvas
   const [reheatFn, setReheatFn] = useState<(() => void) | null>(null)
 
@@ -471,6 +463,31 @@ export default function App() {
 
   // Sound Effects
   const sound = useSoundEffects()
+
+  // One-click escape hatch from any persisted-settings tangle. Covers EVERY
+  // setting the panel exposes — physics, display, clustering, relationship
+  // visibility, audio, and the tag AND/OR mode — so "Reset all" means all.
+  // (Filters are view state, not settings, and are deliberately untouched.)
+  const { setEnabled: setSoundEnabled, setMasterVolume: setSoundVolume } = sound
+  const { setFilterMode: setTagFilterMode } = tagCloud
+  const handleResetAllSettings = useCallback(() => {
+    setForceConfig(DEFAULT_FORCE_CONFIG)
+    setDisplayConfig(DEFAULT_DISPLAY_CONFIG)
+    setClusterConfig(DEFAULT_CLUSTER_CONFIG)
+    setRelationshipVisibility(DEFAULT_RELATIONSHIP_VISIBILITY)
+    // Audio defaults mirror DEFAULT_SETTINGS in lib/sounds.ts.
+    setSoundEnabled(false)
+    setSoundVolume(0.3)
+    setTagFilterMode('OR')
+  }, [
+    setForceConfig,
+    setDisplayConfig,
+    setClusterConfig,
+    setRelationshipVisibility,
+    setSoundEnabled,
+    setSoundVolume,
+    setTagFilterMode,
+  ])
 
   // Pathfinding
   const pathfinding = usePathfinding({

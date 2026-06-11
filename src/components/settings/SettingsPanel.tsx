@@ -133,7 +133,7 @@ export function SettingsPanel({
           {onResetAll && (
             <button
               onClick={onResetAll}
-              title="Reset all settings to defaults (settings persist across sessions)"
+              title="Reset every setting in this panel — physics, display, clustering, relationships, audio, tag mode — to defaults (settings persist across sessions). Filters are not affected."
               className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-ink-3 hover:text-ink hover:bg-white/10 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
