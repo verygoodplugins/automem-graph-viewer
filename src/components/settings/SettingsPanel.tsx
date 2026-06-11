@@ -76,6 +76,19 @@ interface SettingsPanelProps {
   onSoundVolumeChange: (volume: number) => void
   // Reset every persisted setting (forces, display, clustering, relationships)
   onResetAll?: () => void
+  // Connection visibility: which server, which token, how to sign out
+  connection?: {
+    serverUrl: string
+    token: string | null
+    tokenFromUrl: boolean
+  }
+  onDisconnect?: () => void
+}
+
+function maskToken(token: string | null): string {
+  if (!token) return '—'
+  if (token.length <= 8) return '••••'
+  return `${token.slice(0, 4)}••••${token.slice(-4)}`
 }
 
 export function SettingsPanel({
@@ -99,6 +112,8 @@ export function SettingsPanel({
   soundVolume,
   onSoundVolumeChange,
   onResetAll,
+  connection,
+  onDisconnect,
 }: SettingsPanelProps) {
   if (!isOpen) return null
 
@@ -492,6 +507,41 @@ export function SettingsPanel({
             )}
           </div>
         </SettingsSection>
+
+        {/* Connection Section — which server this session talks to, with which
+            token, and how to sign out. Previously invisible: embedded sessions
+            had no indication they were authenticated at all. */}
+        {connection && (
+          <SettingsSection title="Connection" defaultOpen={false}>
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <label className="text-xs text-ink-3">Server</label>
+                <div className="font-mono text-xs text-ink-2 break-all bg-black/30 border border-white/10 rounded px-2 py-1.5">
+                  {connection.serverUrl}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-ink-3">API token</label>
+                <div className="font-mono text-xs text-ink-2 bg-black/30 border border-white/10 rounded px-2 py-1.5">
+                  {maskToken(connection.token)}
+                </div>
+                {connection.tokenFromUrl && (
+                  <p className="text-[10px] text-ink-3 leading-relaxed">
+                    Token provided by this page's URL (shared viewer link).
+                  </p>
+                )}
+              </div>
+              {onDisconnect && (
+                <button
+                  onClick={onDisconnect}
+                  className="w-full py-2 bg-white/10 hover:bg-red-500/20 hover:text-red-400 text-ink-2 text-xs rounded transition-colors"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </SettingsSection>
+        )}
       </div>
     </div>
   )

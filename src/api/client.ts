@@ -6,7 +6,7 @@ import { resolveTypeColors } from '../lib/palette'
  * Detect if running in embedded mode (served from /viewer/ on same origin).
  * In embedded mode, we use relative URLs and get token from URL hash.
  */
-function isEmbeddedMode(): boolean {
+export function isEmbeddedMode(): boolean {
   return window.location.pathname.startsWith('/viewer')
 }
 
@@ -95,6 +95,31 @@ export function getServerConfig(): { serverUrl: string; token: string } | null {
 
 export function isAuthenticated(): boolean {
   return !!getToken()
+}
+
+export interface ConnectionInfo {
+  /** Resolved server origin the browser is actually talking to. */
+  serverUrl: string
+  /** The active token (whatever source won the priority chain), or null. */
+  token: string | null
+  /** Served from /viewer/ on the AutoMem API origin. */
+  embedded: boolean
+  /**
+   * Token came from the URL (?token= or #token=) rather than localStorage —
+   * i.e. a shared viewer link. Clearing stored credentials alone won't sign
+   * such a session out; the URL has to be stripped too.
+   */
+  tokenFromUrl: boolean
+}
+
+/** What the session is connected to and how — for the Settings "Connection" section. */
+export function getConnectionInfo(): ConnectionInfo {
+  return {
+    serverUrl: getApiBase() || window.location.origin,
+    token: getToken(),
+    embedded: isEmbeddedMode(),
+    tokenFromUrl: !!(getTokenFromQuery() || getTokenFromHash()),
+  }
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {

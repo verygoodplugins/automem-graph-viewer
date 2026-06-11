@@ -166,7 +166,7 @@ export function useTagCloud({
 
   const toggleFilterMode = useCallback(() => {
     setFilterMode((prev) => (prev === 'AND' ? 'OR' : 'AND'))
-  }, [])
+  }, [setFilterMode])
 
   return {
     tags,

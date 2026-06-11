@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useGraphSnapshot, useRecall } from './hooks/useGraphData'
 import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { normalizeNode } from './lib/normalizeNode'
-import { fetchGraphNeighbors, getSnapshotCap } from './api/client'
+import { fetchGraphNeighbors, getSnapshotCap, getConnectionInfo } from './api/client'
 import { useAuth } from './hooks/useAuth'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Inspector } from './components/Inspector'
@@ -125,7 +125,7 @@ const EMPTY_NODES: GraphNode[] = []
 const EMPTY_EDGES: import('./lib/types').GraphEdge[] = []
 
 export default function App() {
-  const { setToken, isAuthenticated } = useAuth()
+  const { setToken, clearAuth, isAuthenticated } = useAuth()
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -511,6 +511,65 @@ export default function App() {
       statusTimeoutRef.current = null
     }, 1800)
   }, [])
+
+  // Acknowledge the silent URL-token handshake. A shared /viewer/#token= link
+  // auto-authenticates with zero feedback — confirm which server answered, once,
+  // on the first successful load. Standalone (typed-in) auth already had its
+  // explicit Connect step, so it stays quiet.
+  const connectionToastShownRef = useRef(false)
+  useEffect(() => {
+    if (!data || connectionToastShownRef.current) return
+    connectionToastShownRef.current = true
+    const info = getConnectionInfo()
+    if (info.embedded || info.tokenFromUrl) {
+      let host = info.serverUrl
+      try {
+        host = new URL(info.serverUrl).host
+      } catch {
+        // Relative base — keep as-is.
+      }
+      showStatus(`Connected to ${host}`)
+    }
+  }, [data, showStatus])
+
+  // Sign out / re-enter credentials: URL-borne tokens (?token=, #token=) outrank
+  // localStorage in the auth chain, so clearing storage alone wouldn't sign a
+  // shared-link session out — strip them from the URL too, then TokenPrompt
+  // renders naturally via isAuthenticated.
+  const handleReenterCredentials = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('token')
+    if (url.hash) {
+      const hashParams = new URLSearchParams(url.hash.slice(1))
+      hashParams.delete('token')
+      const rest = hashParams.toString()
+      url.hash = rest ? `#${rest}` : ''
+    }
+    window.history.replaceState(null, '', url.toString())
+    clearAuth()
+  }, [clearAuth])
+
+  // Settings → Connection section. Recomputed when the panel opens (token /
+  // server state lives in localStorage + URL, both cheap reads).
+  const connectionInfo = useMemo(() => {
+    if (!settingsPanelOpen) return undefined
+    const info = getConnectionInfo()
+    return {
+      serverUrl: info.serverUrl,
+      token: info.token,
+      tokenFromUrl: info.tokenFromUrl,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsPanelOpen, isAuthenticated])
+
+  // Auth rejections deserve their own story: a bad shared-link token used to
+  // surface as a generic "Connection Error" + Retry, a dead end that retries
+  // into the same 401 forever.
+  const isAuthError = useMemo(() => {
+    if (!error) return false
+    const message = (error as Error).message ?? ''
+    return /\b(401|403)\b|unauthorized|forbidden|invalid\s+(api\s+)?(key|token)/i.test(message)
+  }, [error])
 
   const { push: breadcrumbPush } = breadcrumbs
   const handleNodeSelect = useCallback((node: GraphNode | null) => {
@@ -937,14 +996,41 @@ export default function App() {
               {error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
                   <div className="glass p-6 rounded-xl max-w-md text-center">
-                    <div className="text-danger text-lg mb-2">Connection Error</div>
-                    <div className="text-ink-3 text-sm mb-4">{(error as Error).message}</div>
-                    <button
-                      onClick={() => refetch()}
-                      className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg transition-colors"
-                    >
-                      Retry
-                    </button>
+                    {isAuthError ? (
+                      <>
+                        <div className="text-danger text-lg mb-2">Access denied</div>
+                        <div className="text-ink-3 text-sm mb-4">
+                          The server rejected this token. If you followed a shared
+                          viewer link, ask for a new one — or enter credentials
+                          yourself.
+                        </div>
+                        <div className="flex items-center justify-center gap-3">
+                          <button
+                            onClick={handleReenterCredentials}
+                            className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg transition-colors"
+                          >
+                            Enter credentials
+                          </button>
+                          <button
+                            onClick={() => refetch()}
+                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-ink-2 rounded-lg transition-colors"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-danger text-lg mb-2">Connection Error</div>
+                        <div className="text-ink-3 text-sm mb-4">{(error as Error).message}</div>
+                        <button
+                          onClick={() => refetch()}
+                          className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg transition-colors"
+                        >
+                          Retry
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -1193,6 +1279,8 @@ export default function App() {
           soundVolume={sound.settings.masterVolume}
           onSoundVolumeChange={sound.setMasterVolume}
           onResetAll={handleResetAllSettings}
+          connection={connectionInfo}
+          onDisconnect={handleReenterCredentials}
         />
       </div>
 
