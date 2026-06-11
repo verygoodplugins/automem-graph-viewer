@@ -39,6 +39,14 @@ interface ExpandableGraphState {
   newNodeIds: Set<string>
   /** newNodeId → centerId of the expansion that introduced it (seed anchor). */
   expansionAnchors: Map<string, string>
+  /**
+   * What the most recent expand appended, for single-level undo. ONLY the last
+   * expansion is undoable: its nodes sit at the array TAIL, so removing them
+   * never moves an earlier node's index — the one removal the append-only
+   * invariant permits. (Arbitrary per-expansion removal would reorder indices
+   * and teleport nodes via the index-keyed interpolation buffers.)
+   */
+  lastExpansion: { centerId: string; nodeIds: string[]; edgeIds: string[] } | null
   /** Internal O(1) dedupe sets. */
   nodeIds: Set<string>
   edgeIds: Set<string>
@@ -53,12 +61,14 @@ type ExpandableGraphAction =
       edges: GraphEdge[]
       typeColors: Record<string, string>
     }
+  | { type: 'undoLast' }
 
 const INITIAL_STATE: ExpandableGraphState = {
   nodes: [],
   edges: [],
   newNodeIds: new Set(),
   expansionAnchors: new Map(),
+  lastExpansion: null,
   nodeIds: new Set(),
   edgeIds: new Set(),
 }
@@ -90,6 +100,7 @@ function reducer(
         edges,
         newNodeIds: new Set(),
         expansionAnchors: new Map(),
+        lastExpansion: null,
         nodeIds,
         edgeIds,
       }
@@ -139,6 +150,38 @@ function reducer(
         edges: addedEdges.length ? [...state.edges, ...addedEdges] : state.edges,
         newNodeIds,
         expansionAnchors,
+        lastExpansion: {
+          centerId,
+          nodeIds: addedNodes.map((n) => n.id),
+          edgeIds: addedEdges.map((e) => e.id),
+        },
+        nodeIds,
+        edgeIds,
+      }
+    }
+
+    case 'undoLast': {
+      const last = state.lastExpansion
+      if (!last) return state
+      const dropNodes = new Set(last.nodeIds)
+      const dropEdges = new Set(last.edgeIds)
+      // The dropped nodes are the array tail (just appended), so this filter
+      // removes a suffix — earlier indices are untouched and the interpolation
+      // buffers simply snap to the shorter array.
+      const nodes = dropNodes.size ? state.nodes.filter((n) => !dropNodes.has(n.id)) : state.nodes
+      const edges = dropEdges.size ? state.edges.filter((e) => !dropEdges.has(e.id)) : state.edges
+      const nodeIds = new Set(state.nodeIds)
+      const edgeIds = new Set(state.edgeIds)
+      dropNodes.forEach((id) => nodeIds.delete(id))
+      dropEdges.forEach((id) => edgeIds.delete(id))
+      const expansionAnchors = new Map(state.expansionAnchors)
+      dropNodes.forEach((id) => expansionAnchors.delete(id))
+      return {
+        nodes,
+        edges,
+        newNodeIds: new Set(),
+        expansionAnchors,
+        lastExpansion: null, // single-level undo
         nodeIds,
         edgeIds,
       }
@@ -160,7 +203,11 @@ export interface ExpandableGraph {
   edges: GraphEdge[]
   newNodeIds: Set<string>
   expansionAnchors: Map<string, string>
+  /** Center id + size of the most recent (undoable) expansion, or null. */
+  lastExpansion: { centerId: string; nodeIds: string[]; edgeIds: string[] } | null
   expand: (payload: ExpandPayload) => void
+  /** Remove the most recent expansion (tail-only; see reducer invariants). */
+  undoLastExpansion: () => void
 }
 
 const EMPTY_TYPE_COLORS: Record<string, string> = {}
@@ -203,11 +250,17 @@ export function useExpandableGraph(
     [typeColors],
   )
 
+  const undoLastExpansion = useCallback(() => {
+    dispatch({ type: 'undoLast' })
+  }, [])
+
   return {
     nodes: state.nodes,
     edges: state.edges,
     newNodeIds: state.newNodeIds,
     expansionAnchors: state.expansionAnchors,
+    lastExpansion: state.lastExpansion,
     expand,
+    undoLastExpansion,
   }
 }

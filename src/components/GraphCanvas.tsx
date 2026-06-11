@@ -79,6 +79,7 @@ const EDGE_BOW = 0.12;
 import {
   SelectionHighlight,
   PinchPreSelectHighlight,
+  ExpansionFrontierRing,
 } from "./SelectionHighlight";
 import { getEdgeStyle } from "../lib/edgeStyles";
 import { TRACE_START, TRACE_END, TRACE_PATH } from "../lib/palette";
@@ -135,6 +136,12 @@ interface GraphCanvasProps {
   typeColors?: Record<string, string>;
   // Expansion: seed newly-merged nodes next to the node the user expanded from.
   expansionAnchors?: Map<string, string>;
+  // Ids merged by the most recent expansion — drives the arrival animation
+  // (scale-up + emissive pulse for ~1.5s so the user SEES the graph grow).
+  newNodeIds?: Set<string>;
+  // Unloaded-neighbor count for the selected node (the expansion frontier).
+  // > 0 renders a dashed "+N more" ring: this node has more world to pull in.
+  frontierCount?: number;
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
   // Expose an imperative camera-navigation handle to the parent (used by the
@@ -180,6 +187,8 @@ export function GraphCanvas({
   relationshipVisibility = DEFAULT_RELATIONSHIP_VISIBILITY,
   typeColors = {},
   expansionAnchors,
+  newNodeIds,
+  frontierCount = 0,
   onReheatReady,
   onResetViewReady,
   onNavigateForBookmarks,
@@ -315,6 +324,8 @@ export function GraphCanvas({
           relationshipVisibility={relationshipVisibility}
           typeColors={typeColors}
           expansionAnchors={expansionAnchors}
+          newNodeIds={newNodeIds}
+          frontierCount={frontierCount}
           onReheatReady={onReheatReady}
           onResetViewReady={onResetViewReady}
           onCameraStateChange={setCameraState}
@@ -401,6 +412,8 @@ function Scene({
   relationshipVisibility = DEFAULT_RELATIONSHIP_VISIBILITY,
   typeColors = {},
   expansionAnchors,
+  newNodeIds,
+  frontierCount = 0,
   onReheatReady,
   onResetViewReady,
   onCameraStateChange,
@@ -1415,6 +1428,7 @@ function Scene({
           onNodeHover={onNodeHover}
           nodeSizeScale={displayConfig.nodeSizeScale}
           focusStates={focusStates}
+          newNodeIds={newNodeIds}
           pathNodeIds={pathNodeIds}
           pathSourceId={pathSourceId}
           pathTargetId={pathTargetId}
@@ -1433,6 +1447,20 @@ function Scene({
             }
             outerRadius={
               selectedLayoutNode.radius * displayConfig.nodeSizeScale * 1.8
+            }
+            animatedPositions={animPositions}
+            nodeIdToIdx={nodeIdToIdx}
+          />
+        )}
+
+        {/* Expansion frontier — dashed "+N more" ring when the selected node
+            still has unloaded neighbors (sits outside the selection ring). */}
+        {selectedLayoutNode && frontierCount > 0 && (
+          <ExpansionFrontierRing
+            node={selectedLayoutNode}
+            count={frontierCount}
+            radius={
+              selectedLayoutNode.radius * displayConfig.nodeSizeScale * 2.4
             }
             animatedPositions={animPositions}
             nodeIdToIdx={nodeIdToIdx}
@@ -1830,6 +1858,7 @@ interface InstancedNodesProps {
   onNodeHover: (node: GraphNode | null) => void;
   nodeSizeScale?: number;
   focusStates: Map<string, NodeFocusState>;
+  newNodeIds?: Set<string>;
   pathNodeIds?: Set<string>;
   pathSourceId?: string | null;
   pathTargetId?: string | null;
@@ -1852,6 +1881,7 @@ function InstancedNodes({
   onNodeHover,
   nodeSizeScale = 1.0,
   focusStates,
+  newNodeIds,
   pathNodeIds,
   pathSourceId,
   pathTargetId,
@@ -1957,6 +1987,18 @@ function InstancedNodes({
   const tagFilteredNodeIdsRef = useRef(tagFilteredNodeIds);
   hasTagFilterRef.current = hasTagFilter;
   tagFilteredNodeIdsRef.current = tagFilteredNodeIds;
+
+  // Arrival animation: when an expansion merges nodes, stamp each new id with
+  // its arrival time. For ARRIVAL_MS the node scales up from ~0.2x with an
+  // emissive boost that catches the bloom pass — embers cooling into place —
+  // so the user unmistakably sees WHERE the graph just grew.
+  const ARRIVAL_MS = 1500;
+  const arrivalsRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!newNodeIds || newNodeIds.size === 0) return;
+    const now = performance.now();
+    newNodeIds.forEach((id) => arrivalsRef.current.set(id, now));
+  }, [newNodeIds]);
 
   // Shared geometry and material - created once
   const geometry = useMemo(
@@ -2150,6 +2192,20 @@ function InstancedNodes({
         1 + Math.sin(breathingTime + nodePhase) * breathingAmplitude;
       finalScale *= breathing;
 
+      // Arrival: scale up from 0.2x and glow while the ember cools (≤1.5s).
+      let arrivalGlow = 1;
+      const arrivedAt = arrivalsRef.current.get(node.id);
+      if (arrivedAt !== undefined) {
+        const at = (performance.now() - arrivedAt) / ARRIVAL_MS;
+        if (at >= 1) {
+          arrivalsRef.current.delete(node.id);
+        } else {
+          const ease = 1 - Math.pow(1 - at, 3);
+          finalScale *= 0.2 + 0.8 * ease;
+          arrivalGlow = 1 + 2.5 * (1 - at);
+        }
+      }
+
       // Keep off-focus search matches readable as markers (not specks) in detail view.
       if (isOffFocusMatch) {
         finalScale = Math.max(finalScale, newScale * 1.1);
@@ -2232,6 +2288,11 @@ function InstancedNodes({
       // Applied AFTER focusOpacity so the depth-dim can't swallow them.
       if (isOffFocusMatch) {
         tempColor.lerp(accentColor, 0.4);
+      }
+      // Arrival glow rides on top of everything — a just-merged node must read
+      // as new even under selection-focus dimming.
+      if (arrivalGlow > 1) {
+        tempColor.multiplyScalar(arrivalGlow);
       }
       mesh.setColorAt(i, tempColor);
     });
