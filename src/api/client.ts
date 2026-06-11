@@ -1,5 +1,6 @@
 import type { GraphSnapshot, GraphNeighbors, GraphStats, GraphNode } from '../lib/types'
 import { normalizeNode } from '../lib/normalizeNode'
+import { resolveTypeColors } from '../lib/palette'
 
 /**
  * Detect if running in embedded mode (served from /viewer/ on same origin).
@@ -166,7 +167,22 @@ export async function fetchGraphSnapshot(params: SnapshotParams = {}): Promise<G
 
   const url = `${getApiBase()}/graph/snapshot?${searchParams}`
   const response = await fetch(url, { headers: getAuthHeaders() })
-  return handleResponse<GraphSnapshot>(response)
+  const snapshot = await handleResponse<GraphSnapshot>(response)
+
+  // Canonicalize colors at the chokepoint: everything downstream (the expand
+  // reducer's normalizeNode, tag chips, settings swatches, cluster detection)
+  // reads `meta.type_colors`, so resolving here makes every surface agree.
+  // Nodes are recolored too so even the brief pre-reset render (App's raw
+  // snapshot fallback) shows canonical hues.
+  const type_colors = resolveTypeColors(snapshot.meta?.type_colors)
+  return {
+    ...snapshot,
+    nodes: snapshot.nodes.map((n) => ({
+      ...n,
+      color: type_colors[n.type] ?? n.color,
+    })),
+    meta: { ...snapshot.meta, type_colors },
+  }
 }
 
 export interface NeighborsParams {
@@ -194,7 +210,11 @@ export async function fetchGraphNeighbors(
 
 export async function fetchGraphStats(): Promise<GraphStats> {
   const response = await fetch(`${getApiBase()}/graph/stats`, { headers: getAuthHeaders() })
-  return handleResponse<GraphStats>(response)
+  const stats = await handleResponse<GraphStats>(response)
+  return {
+    ...stats,
+    meta: { ...stats.meta, type_colors: resolveTypeColors(stats.meta?.type_colors) },
+  }
 }
 
 /**

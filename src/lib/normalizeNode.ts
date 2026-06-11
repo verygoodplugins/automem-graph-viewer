@@ -87,7 +87,11 @@ export function normalizeNode(node: RawNode, typeColors: Record<string, string>)
     // already guards (isNaN check), so the node simply hides during active
     // time-travel until the backend backfills a real timestamp.
     timestamp: node.timestamp ?? '',
-    color: node.color ?? typeColors[type] ?? FALLBACK_COLOR,
+    // Type-keyed color WINS over a server-provided node color: `typeColors` is
+    // the resolved canonical palette (client palette merged over server colors,
+    // see lib/palette.ts), so every surface renders the same hue per type. The
+    // raw node color is only a fallback for a type the palette doesn't know.
+    color: typeColors[type] ?? node.color ?? FALLBACK_COLOR,
     // Backend formulas, used only when a field is missing/non-finite.
     radius: finiteOr(node.radius, 0.5 + importance * 1.5),
     opacity: finiteOr(node.opacity, 0.4 + confidence * 0.6),

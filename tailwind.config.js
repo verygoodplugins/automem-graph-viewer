@@ -14,15 +14,18 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
-        // --- Memory type colors (the only saturated hues; do not touch) ---
-        decision: '#3B82F6',
-        pattern: '#10B981',
-        preference: '#8B5CF6',
-        style: '#EC4899',
-        habit: '#F59E0B',
-        insight: '#F97316',
-        context: '#6B7280',
-        memory: '#94A3B8',
+        // --- Memory type colors (the only saturated hues) ---
+        // Mirror of the canonical palette in src/lib/palette.ts (TYPE_COLORS).
+        // If you change a hue, change it THERE — this block only exists so
+        // Tailwind utility classes agree with the scene.
+        decision: '#f59e0b',
+        pattern: '#10b981',
+        preference: '#ec4899',
+        style: '#06b6d4',
+        habit: '#f97316',
+        insight: '#8b5cf6',
+        context: '#3b82f6',
+        memory: '#6366f1',
 
         // --- Semantic instrument tokens (sourced from CSS vars in index.css) ---
         void: 'var(--void)',
