@@ -949,6 +949,70 @@ export default function App() {
                 </div>
               )}
 
+              {/* Empty state — a successful load with zero nodes used to leave a
+                  silent black canvas, indistinguishable from a crash. For brand-new
+                  AutoMem deployments (empty store) this was the literal first
+                  impression. */}
+              {!isLoading && !error && data && nodes.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center z-10">
+                  <div className="glass p-8 rounded-xl max-w-md text-center">
+                    <span className="text-accent text-3xl leading-none" aria-hidden>
+                      ✦
+                    </span>
+                    {data.stats.total_nodes === 0 ? (
+                      <>
+                        <div className="font-display text-lg text-ink mt-3 mb-2">
+                          No memories yet
+                        </div>
+                        <div className="text-ink-3 text-sm mb-5">
+                          Once your agent starts storing memories, they'll appear
+                          here as a living graph.
+                        </div>
+                        <div className="flex items-center justify-center gap-3">
+                          <button
+                            onClick={() => refetch()}
+                            className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg text-sm transition-colors"
+                          >
+                            Refresh
+                          </button>
+                          <a
+                            href="https://github.com/verygoodplugins/automem"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-ink-2 rounded-lg text-sm transition-colors"
+                          >
+                            Wire up an agent
+                          </a>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-display text-lg text-ink mt-3 mb-2">
+                          No memories match your filters
+                        </div>
+                        <div className="text-ink-3 text-sm mb-5">
+                          {data.stats.total_nodes.toLocaleString()} memories are in
+                          your store, but the current type and importance filters
+                          exclude all of them.
+                        </div>
+                        <button
+                          onClick={() =>
+                            setFilters((prev) => ({
+                              ...prev,
+                              types: [],
+                              importanceRange: [0, 1],
+                            }))
+                          }
+                          className="px-4 py-2 bg-accent text-void hover:bg-white rounded-lg text-sm transition-colors"
+                        >
+                          Reset filters
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <GraphCanvas
                 nodes={nodes}
                 edges={filteredEdges}
