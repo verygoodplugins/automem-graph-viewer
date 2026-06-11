@@ -1995,8 +1995,14 @@ function InstancedNodes({
   const ARRIVAL_MS = 1500;
   const arrivalsRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
-    if (!newNodeIds || newNodeIds.size === 0) return;
     const now = performance.now();
+    // Sweep expired entries first: useFrame only deletes an entry when its
+    // node is still rendered, so an Undo that removes nodes mid-animation
+    // would otherwise leave their ids in the map forever.
+    arrivalsRef.current.forEach((startedAt, id) => {
+      if (now - startedAt > ARRIVAL_MS) arrivalsRef.current.delete(id);
+    });
+    if (!newNodeIds || newNodeIds.size === 0) return;
     newNodeIds.forEach((id) => arrivalsRef.current.set(id, now));
   }, [newNodeIds]);
 

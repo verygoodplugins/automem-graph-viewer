@@ -691,8 +691,9 @@ export default function App() {
   )
 
   // Expansion frontier: how many of the selected node's neighbors are NOT yet
-  // in view. Uses the exact query key the Inspector uses, so this is a cache
-  // read, not a second fetch. Drives the dashed "+N more" ring on the canvas.
+  // in view. Shares the Inspector's exact query key, so the two dedupe to a
+  // single request when both mount; the hook can still fetch on its own when
+  // the cache is cold or stale. Drives the dashed "+N more" ring on the canvas.
   const selectedNeighbors = useGraphNeighbors(selectedNode?.id ?? null, NEIGHBOR_PARAMS)
   const frontierCount = useMemo(() => {
     const d = selectedNeighbors.data
@@ -710,32 +711,38 @@ export default function App() {
   // Announce arrivals: every expansion (inspector "Expand into graph" or an
   // off-graph search-result injection) gets a toast naming the anchor, with a
   // single-level Undo (tail-only removal — see useExpandableGraph invariants).
-  const prevNewNodeIdsRef = useRef<Set<string>>(graph.newNodeIds)
+  // Keyed on lastExpansion identity (not newNodeIds) so an edges-only
+  // expansion — all neighbor nodes already in view, new connections discovered
+  // — announces itself too instead of merging silently.
+  const prevLastExpansionRef = useRef(graph.lastExpansion)
   const { undoLastExpansion } = graph
   useEffect(() => {
-    if (graph.newNodeIds === prevNewNodeIdsRef.current) return
-    prevNewNodeIdsRef.current = graph.newNodeIds
-    const size = graph.newNodeIds.size
-    if (size === 0) return
     const last = graph.lastExpansion
-    const center = last ? rawNodes.find((n) => n.id === last.centerId) : undefined
+    if (last === prevLastExpansionRef.current) return
+    prevLastExpansionRef.current = last
+    if (!last) return // reset/undo cleared it — nothing to announce
+    const nodeCount = last.nodeIds.length
+    const edgeCount = last.edgeIds.length
+    if (nodeCount === 0 && edgeCount === 0) return
+    const center = rawNodes.find((n) => n.id === last.centerId)
     const title = center
       ? `"${center.content.slice(0, 28)}${center.content.length > 28 ? '…' : ''}"`
       : 'the selection'
-    const removedIds = new Set(last?.nodeIds ?? [])
-    showStatus(
-      `+${size} ${size === 1 ? 'memory' : 'memories'} connected to ${title}`,
-      {
-        actionLabel: 'Undo',
-        onAction: () => {
-          undoLastExpansion()
-          // Don't leave a removed node selected — it no longer exists in view.
-          setSelectedNode((prev) => (prev && removedIds.has(prev.id) ? null : prev))
-        },
-        durationMs: 6000,
-      }
-    )
-  }, [graph.newNodeIds, graph.lastExpansion, undoLastExpansion, rawNodes, showStatus])
+    const message =
+      nodeCount > 0
+        ? `+${nodeCount} ${nodeCount === 1 ? 'memory' : 'memories'} connected to ${title}`
+        : `+${edgeCount} new ${edgeCount === 1 ? 'connection' : 'connections'} to ${title}`
+    const removedIds = new Set(last.nodeIds)
+    showStatus(message, {
+      actionLabel: 'Undo',
+      onAction: () => {
+        undoLastExpansion()
+        // Don't leave a removed node selected — it no longer exists in view.
+        setSelectedNode((prev) => (prev && removedIds.has(prev.id) ? null : prev))
+      },
+      durationMs: 6000,
+    })
+  }, [graph.lastExpansion, undoLastExpansion, rawNodes, showStatus])
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
     if (node) {
@@ -1404,7 +1411,13 @@ export default function App() {
           <span>{statusMessage.text}</span>
           {statusMessage.action && (
             <button
+              type="button"
               onClick={() => {
+                // Cancel the auto-dismiss so it can't clear a LATER toast.
+                if (statusTimeoutRef.current !== null) {
+                  window.clearTimeout(statusTimeoutRef.current)
+                  statusTimeoutRef.current = null
+                }
                 statusMessage.action!.onClick()
                 setStatusMessage(null)
               }}
