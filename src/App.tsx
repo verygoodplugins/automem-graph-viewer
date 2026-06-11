@@ -23,6 +23,7 @@ import { PathfindingOverlay } from './components/PathfindingOverlay'
 import { TimelineBar } from './components/TimelineBar'
 import { TagCloud } from './components/TagCloud'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
+import { usePersistentState } from './hooks/usePersistentState'
 import { useHandLockAndGrab } from './hooks/useHandLockAndGrab'
 import { useHandRecording, downloadRecording, listSavedRecordings, loadRecordingFromStorage } from './hooks/useHandRecording'
 import { useHandPlayback } from './hooks/useHandPlayback'
@@ -243,19 +244,33 @@ export default function App() {
   })
   const [hasSetDefaultImportance, setHasSetDefaultImportance] = useState(false)
 
-  // Force configuration state
-  const [forceConfig, setForceConfig] = useState<ForceConfig>(DEFAULT_FORCE_CONFIG)
-
-  // Display configuration state
-  const [displayConfig, setDisplayConfig] = useState<DisplayConfig>(DEFAULT_DISPLAY_CONFIG)
-
-  // Clustering configuration state
-  const [clusterConfig, setClusterConfig] = useState<ClusterConfig>(DEFAULT_CLUSTER_CONFIG)
-
-  // Relationship visibility state
-  const [relationshipVisibility, setRelationshipVisibility] = useState<RelationshipVisibility>(
-    DEFAULT_RELATIONSHIP_VISIBILITY
+  // Tuning configs persist across sessions (localStorage write-through) so the
+  // workspace looks the same tomorrow morning as it did last night.
+  const [forceConfig, setForceConfig] = usePersistentState<ForceConfig>(
+    'automem_settings_forces',
+    DEFAULT_FORCE_CONFIG
   )
+  const [displayConfig, setDisplayConfig] = usePersistentState<DisplayConfig>(
+    'automem_settings_display',
+    DEFAULT_DISPLAY_CONFIG
+  )
+  const [clusterConfig, setClusterConfig] = usePersistentState<ClusterConfig>(
+    'automem_settings_cluster',
+    DEFAULT_CLUSTER_CONFIG
+  )
+  const [relationshipVisibility, setRelationshipVisibility] =
+    usePersistentState<RelationshipVisibility>(
+      'automem_settings_relationships',
+      DEFAULT_RELATIONSHIP_VISIBILITY
+    )
+
+  // One-click escape hatch from any persisted-settings tangle.
+  const handleResetAllSettings = useCallback(() => {
+    setForceConfig(DEFAULT_FORCE_CONFIG)
+    setDisplayConfig(DEFAULT_DISPLAY_CONFIG)
+    setClusterConfig(DEFAULT_CLUSTER_CONFIG)
+    setRelationshipVisibility(DEFAULT_RELATIONSHIP_VISIBILITY)
+  }, [setForceConfig, setDisplayConfig, setClusterConfig, setRelationshipVisibility])
 
   // Reheat callback - will be set by GraphCanvas
   const [reheatFn, setReheatFn] = useState<(() => void) | null>(null)
@@ -1113,6 +1128,7 @@ export default function App() {
           onSoundEnabledChange={sound.setEnabled}
           soundVolume={sound.settings.masterVolume}
           onSoundVolumeChange={sound.setMasterVolume}
+          onResetAll={handleResetAllSettings}
         />
       </div>
 

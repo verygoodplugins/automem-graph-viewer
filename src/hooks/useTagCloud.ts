@@ -9,6 +9,7 @@
 
 import { useMemo, useState, useCallback } from 'react'
 import type { GraphNode } from '../lib/types'
+import { usePersistentState } from './usePersistentState'
 
 export interface TagData {
   tag: string
@@ -56,7 +57,11 @@ export function useTagCloud({
   maxTags = 50,
 }: UseTagCloudOptions): UseTagCloudReturn {
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set())
-  const [filterMode, setFilterMode] = useState<'AND' | 'OR'>('OR')
+  // AND/OR mode is a sticky workspace preference; the selection itself is not.
+  const [filterMode, setFilterMode] = usePersistentState<'AND' | 'OR'>(
+    'automem_settings_tag_filter_mode',
+    'OR'
+  )
   const [searchTerm, setSearchTerm] = useState('')
 
   // Aggregate tags from all nodes

@@ -74,6 +74,8 @@ interface SettingsPanelProps {
   onSoundEnabledChange: (enabled: boolean) => void
   soundVolume: number
   onSoundVolumeChange: (volume: number) => void
+  // Reset every persisted setting (forces, display, clustering, relationships)
+  onResetAll?: () => void
 }
 
 export function SettingsPanel({
@@ -96,6 +98,7 @@ export function SettingsPanel({
   onSoundEnabledChange,
   soundVolume,
   onSoundVolumeChange,
+  onResetAll,
 }: SettingsPanelProps) {
   if (!isOpen) return null
 
@@ -111,13 +114,25 @@ export function SettingsPanel({
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/5">
         <h2 className="font-display text-sm font-semibold text-ink">Graph Settings</h2>
-        <button
-          onClick={onClose}
-          aria-label="Close settings"
-          className="p-2.5 rounded hover:bg-white/10 text-ink-3 hover:text-ink transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onResetAll && (
+            <button
+              onClick={onResetAll}
+              title="Reset all settings to defaults (settings persist across sessions)"
+              className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-ink-3 hover:text-ink hover:bg-white/10 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset all
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            aria-label="Close settings"
+            className="p-2.5 rounded hover:bg-white/10 text-ink-3 hover:text-ink transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Scrollable content */}
