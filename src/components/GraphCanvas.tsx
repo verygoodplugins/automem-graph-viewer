@@ -142,6 +142,9 @@ interface GraphCanvasProps {
   // Unloaded-neighbor count for the selected node (the expansion frontier).
   // > 0 renders a dashed "+N more" ring: this node has more world to pull in.
   frontierCount?: number;
+  // Type refinement from the search sidebar's pills — the graph spotlight
+  // follows it so narrowing the list narrows the scene too.
+  searchTypeFilter?: Set<string>;
   onReheatReady?: (reheat: () => void) => void;
   onResetViewReady?: (resetView: () => void) => void;
   // Expose an imperative camera-navigation handle to the parent (used by the
@@ -189,6 +192,7 @@ export function GraphCanvas({
   expansionAnchors,
   newNodeIds,
   frontierCount = 0,
+  searchTypeFilter,
   onReheatReady,
   onResetViewReady,
   onNavigateForBookmarks,
@@ -326,6 +330,7 @@ export function GraphCanvas({
           expansionAnchors={expansionAnchors}
           newNodeIds={newNodeIds}
           frontierCount={frontierCount}
+          searchTypeFilter={searchTypeFilter}
           onReheatReady={onReheatReady}
           onResetViewReady={onResetViewReady}
           onCameraStateChange={setCameraState}
@@ -414,6 +419,7 @@ function Scene({
   expansionAnchors,
   newNodeIds,
   frontierCount = 0,
+  searchTypeFilter,
   onReheatReady,
   onResetViewReady,
   onCameraStateChange,
@@ -989,10 +995,15 @@ function Scene({
   const searchLower = searchTerm.trim().toLowerCase();
   const matchingIds = useMemo(() => {
     if (!searchLower) return new Set<string>();
+    const typeGate = searchTypeFilter && searchTypeFilter.size > 0 ? searchTypeFilter : null;
     return new Set(
-      layoutNodes.filter((n) => matchesSearch(n, searchLower)).map((n) => n.id),
+      layoutNodes
+        .filter(
+          (n) => matchesSearch(n, searchLower) && (!typeGate || typeGate.has(n.type)),
+        )
+        .map((n) => n.id),
     );
-  }, [layoutNodes, searchLower]);
+  }, [layoutNodes, searchLower, searchTypeFilter]);
 
   // Spotlight is active only in the "results view": a search is running, it has
   // matches, and NO node is selected. When a node is selected we hand the scene
@@ -1372,7 +1383,11 @@ function Scene({
         {/* Cluster boundaries (rendered behind edges) */}
         <ClusterBoundaries
           clusters={displayClusters}
-          visible={clusterConfig.showBoundaries}
+          // The nebulas are ADDITIVE point clouds — thousands of stacked dots
+          // re-accumulate to full glow at any nonzero opacity, drowning the
+          // search spotlight. Hide them while results own the scene (the
+          // component animates its own fade via targetOpacity).
+          visible={clusterConfig.showBoundaries && !spotlightActive}
           opacity={0.2}
           hoveredClusterId={hoveredClusterId}
         />
@@ -1408,7 +1423,8 @@ function Scene({
         <EdgeParticles
           edges={edges}
           nodes={layoutNodes}
-          enabled={!performanceMode}
+          // Ambient flow is noise while the search spotlight is on.
+          enabled={!performanceMode && !spotlightActive}
           particlesPerEdge={2}
           animatedPositions={animPositions}
           nodeIdToIdx={nodeIdToIdx}
@@ -1639,6 +1655,9 @@ function BatchedEdges({
       const strength = typeof edge.strength === "number" ? edge.strength : 0.5;
       const strengthBoost = 0.45 + 0.9 * Math.max(0, Math.min(1, strength));
 
+      const spotlightOn =
+        !!searchTerm && !!searchMatchingIds && searchMatchingIds.size > 0;
+
       let alpha = style.opacity * linkOpacity * focusOpacity * strengthBoost;
       if (isInPath) {
         alpha = 1.0;
@@ -1648,6 +1667,10 @@ function BatchedEdges({
         alpha = 0.9;
       } else if (isSearchRelevant) {
         alpha = Math.min(1, alpha * 2.0);
+      } else if (spotlightOn) {
+        // Results view: the ~7k-edge web recedes with the non-matching nodes
+        // so the spotlighted matches own the scene.
+        alpha *= 0.3;
       }
 
       const r = color.r * alpha;
@@ -2076,10 +2099,8 @@ function InstancedNodes({
   const tempPosition = useMemo(() => new THREE.Vector3(), []);
   const tempQuaternion = useMemo(() => new THREE.Quaternion(), []);
   const tempScale = useMemo(() => new THREE.Vector3(), []);
-  // Reused spotlight colors (allocate once, never per-node/per-frame):
-  // a neutral slate to desaturate dimmed non-matches, and the cold "accent"
-  // near-white (--accent) to keep off-focus search matches faintly visible.
-  const dimGrey = useMemo(() => new THREE.Color("#6b7280"), []);
+  // Reused off-focus accent (allocate once, never per-node/per-frame): the
+  // cold near-white (--accent) keeps off-focus search matches faintly visible.
   const accentColor = useMemo(() => new THREE.Color("#e8ecf4"), []);
 
   // Update instance matrices and colors each frame
@@ -2243,10 +2264,12 @@ function InstancedNodes({
 
       if (isDimmed && !isInPath) {
         if (spotlightActive && !matchingIds.has(node.id)) {
-          // Results view: push non-matches well back — desaturate toward neutral
-          // slate, then darken hard so the matched nodes own the scene.
-          tempColor.lerp(dimGrey, 0.5);
-          tempColor.multiplyScalar(0.2);
+          // Results view: non-matches recede INTO the near-black void — keep
+          // their hue (no gray lerp; that read as mud) and pull brightness way
+          // down. Against this backdrop that's visually equivalent to lowering
+          // opacity, without the depth-write holes true per-instance alpha
+          // punches in the edge web behind translucent spheres.
+          tempColor.multiplyScalar(0.15);
         } else {
           // Path / tag-filter dimming keeps its softer treatment.
           tempColor.multiplyScalar(0.5);
@@ -2260,7 +2283,7 @@ function InstancedNodes({
         // Brighten selected/hovered/path/match nodes. Spotlight matches get an
         // extra push so they cross the bloom threshold and visibly glow.
         let brightenFactor = isInPath ? 1.3 : 1.2;
-        if (spotlightActive && isSearchMatch) brightenFactor = 1.6;
+        if (spotlightActive && isSearchMatch) brightenFactor = 2.0;
         tempColor.multiplyScalar(brightenFactor);
       } else {
         // Importance halo: brighter cores for important memories so bloom blooms

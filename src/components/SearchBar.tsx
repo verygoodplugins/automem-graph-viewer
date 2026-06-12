@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Search, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Search, X, History } from 'lucide-react'
 import type { FilterChip } from '@/hooks/useFilterChips'
+
+export interface RecentSearch {
+  term: string
+  /** Whole-store match count the term last returned. */
+  count: number
+  /** The count hit the server cap when recorded (rendered as "N+"). */
+  capped?: boolean
+}
 
 interface SearchBarProps {
   value: string
@@ -19,6 +28,8 @@ interface SearchBarProps {
   searchResultCapped?: boolean
   /** Recall request in flight. */
   searchLoading?: boolean
+  /** Recently settled searches, most recent first (offered on focus when empty). */
+  recentSearches?: RecentSearch[]
 }
 
 export function SearchBar({
@@ -35,6 +46,7 @@ export function SearchBar({
   searchResultCount,
   searchResultCapped = false,
   searchLoading = false,
+  recentSearches = [],
 }: SearchBarProps) {
   const [localValue, setLocalValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -42,6 +54,39 @@ export function SearchBar({
   const modifierLabel = useMemo(() => {
     return navigator.platform.toLowerCase().includes('mac') ? 'Cmd' : 'Ctrl'
   }, [])
+
+  // Recent-searches dropdown. The header clips vertical overflow (it scrolls
+  // chips horizontally), so the panel renders through a portal at a fixed
+  // position measured from the input wrapper.
+  const [focused, setFocused] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const [dropdownRect, setDropdownRect] = useState<{
+    left: number
+    top: number
+    width: number
+  } | null>(null)
+  const handleFocus = useCallback(() => {
+    setFocused(true)
+    const r = wrapperRef.current?.getBoundingClientRect()
+    if (r) setDropdownRect({ left: r.left, top: r.bottom + 6, width: r.width })
+  }, [])
+  const showRecent = focused && !localValue && recentSearches.length > 0 && !!dropdownRect
+
+  // Keyboard navigation for the dropdown happens ON THE INPUT (combobox
+  // pattern): focus never leaves it, so blur can't race the selection.
+  const [activeRecent, setActiveRecent] = useState(-1)
+  useEffect(() => {
+    if (!showRecent) setActiveRecent(-1)
+  }, [showRecent])
+
+  const pickRecent = useCallback(
+    (term: string) => {
+      setLocalValue(term)
+      onChange(term)
+      setFocused(false)
+    },
+    [onChange]
+  )
 
   const hasChips = chips.length > 0
   // During a text search the meaningful number is the whole-store match count
@@ -155,7 +200,7 @@ export function SearchBar({
         )}
 
         {/* Search input */}
-        <div className="relative flex-1 min-w-[140px]">
+        <div ref={wrapperRef} className="relative flex-1 min-w-[140px]">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="w-4 h-4 text-ink-3" />
           </div>
@@ -164,7 +209,36 @@ export function SearchBar({
             ref={inputRef}
             value={localValue}
             onChange={(e) => setLocalValue(e.target.value)}
+            onFocus={handleFocus}
+            onBlur={() => setFocused(false)}
+            role="combobox"
+            aria-expanded={showRecent}
+            aria-controls="recent-searches-listbox"
+            aria-autocomplete="list"
             onKeyDown={(event) => {
+              if (showRecent) {
+                const n = recentSearches.length
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setActiveRecent((i) => (i + 1) % n)
+                  return
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setActiveRecent((i) => (i - 1 + n) % n)
+                  return
+                }
+                if (event.key === 'Enter' && activeRecent >= 0 && activeRecent < n) {
+                  event.preventDefault()
+                  pickRecent(recentSearches[activeRecent].term)
+                  return
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setFocused(false)
+                  return
+                }
+              }
               if (event.key === 'Escape' && localValue) {
                 event.preventDefault()
                 handleClear()
@@ -222,6 +296,51 @@ export function SearchBar({
           {totalCount.toLocaleString()}
         </span>
       )}
+
+      {/* Recent searches — yesterday's question is one click away. Portaled:
+          the header's overflow clipping would swallow an in-flow dropdown. */}
+      {showRecent &&
+        createPortal(
+          <div
+            id="recent-searches-listbox"
+            role="listbox"
+            aria-label="Recent searches"
+            className="fixed z-[100] rounded-lg border border-hairline bg-surface-1 shadow-elev-2 overflow-hidden"
+            style={{
+              left: dropdownRect.left,
+              top: dropdownRect.top,
+              width: dropdownRect.width,
+            }}
+          >
+            <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-ink-4">
+              Recent searches
+            </div>
+            {recentSearches.map((recent, i) => (
+              <button
+                key={recent.term}
+                type="button"
+                role="option"
+                aria-selected={i === activeRecent}
+                // mousedown (not click) so selection beats the input's blur.
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  pickRecent(recent.term)
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm text-ink-2 text-left transition-colors ${
+                  i === activeRecent ? 'bg-white/15' : 'hover:bg-white/10'
+                }`}
+              >
+                <History className="w-3.5 h-3.5 text-ink-4 flex-shrink-0" />
+                <span className="truncate flex-1">{recent.term}</span>
+                <span className="font-mono text-[10px] text-ink-4">
+                  {recent.count.toLocaleString()}
+                  {recent.capped ? '+' : ''} in store
+                </span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
