@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Search, ArrowRight, Loader2, Plus, Tag } from 'lucide-react'
 import type { GraphNode } from '@/lib/types'
 import { searchRelevance } from '@/lib/searchMatch'
@@ -22,6 +22,12 @@ interface SearchResultsListProps {
   /** Ids already present in the loaded scene (off-graph rows get a "load" affordance). */
   inGraphIds: Set<string>
   searchTerm: string
+  /**
+   * Type refinement, owned by the parent so the graph spotlight follows it.
+   * Empty set = no refinement.
+   */
+  typeFilter: Set<string>
+  onTypeFilterChange: (next: Set<string>) => void
   /** Select a result → parent flies to it (in-graph) or fetches + injects it (off-graph). */
   onSelect: (node: GraphNode) => void
 }
@@ -48,19 +54,12 @@ export function SearchResultsList({
   loadingId,
   inGraphIds,
   searchTerm,
+  typeFilter,
+  onTypeFilterChange,
   onSelect,
 }: SearchResultsListProps) {
   const lower = searchTerm.trim().toLowerCase()
   const [sortMode, setSortMode] = useState<SortMode>('relevance')
-  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
-
-  // A type pill is a refinement of THIS query. Carrying it into the next query
-  // would silently filter results the user never asked to narrow — clear it
-  // when the term changes. (Sort is a stable viewing preference; it stays.)
-  useEffect(() => {
-    // Keep identity when already empty — no churn on every keystroke.
-    setTypeFilter((prev) => (prev.size > 0 ? new Set<string>() : prev))
-  }, [searchTerm])
 
   // Display list = server (semantic, whole-store) results in backend order, then
   // any LOCAL substring matches the server didn't return, deduped by id. We do NOT
@@ -107,12 +106,10 @@ export function SearchResultsList({
   }, [display, typeFilter, sortMode])
 
   const toggleType = (type: string) => {
-    setTypeFilter((prev) => {
-      const next = new Set(prev)
-      if (next.has(type)) next.delete(type)
-      else next.add(type)
-      return next
-    })
+    const next = new Set(typeFilter)
+    if (next.has(type)) next.delete(type)
+    else next.add(type)
+    onTypeFilterChange(next)
   }
 
   // Headline count: trust the server's whole-store count, but never show a number
@@ -207,7 +204,7 @@ export function SearchResultsList({
             {typeFilter.size > 0 && (
               <button
                 type="button"
-                onClick={() => setTypeFilter(new Set())}
+                onClick={() => onTypeFilterChange(new Set())}
                 className="px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink-2"
               >
                 Clear
@@ -219,7 +216,7 @@ export function SearchResultsList({
 
       {/* Capped guidance — a refinement nudge instead of silence at the 100 cap */}
       {capped && (
-        <div className="flex-shrink-0 px-4 py-2 bg-warn/10 border-b border-white/5 text-[11px] text-ink-3 leading-snug">
+        <div className="flex-shrink-0 px-4 py-2 bg-[rgba(201,162,75,0.10)] border-b border-white/5 text-[11px] text-ink-3 leading-snug">
           Showing the top {count?.toLocaleString()} from your store. Add a word or
           pick a type above to narrow it down.
         </div>
@@ -283,7 +280,10 @@ export function SearchResultsList({
                     part.highlight ? (
                       <mark
                         key={i}
-                        className="bg-accent/25 text-ink rounded-[2px] px-px"
+                        // Explicit colors: Tailwind /NN opacity modifiers don't
+                        // compose with var-string theme colors (the class is
+                        // silently dropped and the UA's yellow mark shows).
+                        className="rounded-[2px] px-px font-medium bg-[rgba(232,236,244,0.18)] text-[#ffffff]"
                       >
                         {part.text}
                       </mark>
@@ -294,7 +294,7 @@ export function SearchResultsList({
                 </div>
                 {matchedTag && (
                   <div className="mt-1">
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-ink-2 bg-accent/15">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-ink-2 bg-[rgba(232,236,244,0.12)]">
                       <Tag className="w-2.5 h-2.5" />
                       matched: {matchedTag}
                     </span>

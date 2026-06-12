@@ -348,6 +348,15 @@ export default function App() {
   // for "search only sees ~2k of ~120k". Disabled until the term is non-empty.
   const recall = useRecall(searchTerm, data?.meta?.type_colors)
 
+  // Search type refinement (the pills in the results sidebar). Owned here so
+  // the graph spotlight can follow it: narrowing the list narrows the scene.
+  // Reset when the term changes — a stale refinement must never silently
+  // filter a new query.
+  const [searchTypeFilter, setSearchTypeFilter] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    setSearchTypeFilter((prev) => (prev.size > 0 ? new Set<string>() : prev))
+  }, [searchTerm])
+
   // Recent searches: a query is "real" once it has results AND survives a
   // 2.5s dwell (typing intermediates like "groo" → "groover cur" cancel the
   // timer, so prefixes never pollute the list). Last 5, most recent first.
@@ -1233,6 +1242,7 @@ export default function App() {
                 expansionAnchors={graph.expansionAnchors}
                 newNodeIds={graph.newNodeIds}
                 frontierCount={frontierCount}
+                searchTypeFilter={searchTypeFilter}
                 onReheatReady={setReheatFn}
                 onResetViewReady={setResetViewFn}
                 onNavigateForBookmarks={(fn) => { navigateForBookmarksRef.current = fn }}
@@ -1347,6 +1357,8 @@ export default function App() {
                 loadingId={loadingResultId}
                 inGraphIds={visibleNodeIds}
                 searchTerm={searchTerm}
+                typeFilter={searchTypeFilter}
+                onTypeFilterChange={setSearchTypeFilter}
                 onSelect={handleRemoteResultSelect}
               />
             ) : (
