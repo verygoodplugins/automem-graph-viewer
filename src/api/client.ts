@@ -18,7 +18,8 @@ function getTokenFromHash(): string | null {
   const hash = window.location.hash
   if (!hash) return null
   const params = new URLSearchParams(hash.slice(1))
-  return params.get('token')
+  // `api_token` is accepted as an alias for `token` — see getTokenFromQuery.
+  return params.get('token') || params.get('api_token')
 }
 
 function getApiBase(): string {
@@ -46,7 +47,11 @@ function getApiBase(): string {
 
 function getTokenFromQuery(): string | null {
   const urlParams = new URLSearchParams(window.location.search)
-  return urlParams.get('token')
+  // Accept `api_token` as an alias for `token`. Viewer links are routinely
+  // hand-built and `?api_token=` is a natural guess; reading only `token`
+  // silently drops the credential and surfaces as a bogus 401 ("right key,
+  // still unauthorized"). Tolerate the common alias instead.
+  return urlParams.get('token') || urlParams.get('api_token')
 }
 
 function getToken(): string | null {
@@ -74,7 +79,7 @@ export function getServerConfig(): { serverUrl: string; token: string } | null {
   // Check URL params first (for local dev against remote backend)
   const urlParams = new URLSearchParams(window.location.search)
   const serverOverride = urlParams.get('server')
-  const tokenOverride = urlParams.get('token')
+  const tokenOverride = urlParams.get('token') || urlParams.get('api_token')
   if (serverOverride && tokenOverride) {
     return { serverUrl: serverOverride, token: tokenOverride }
   }
