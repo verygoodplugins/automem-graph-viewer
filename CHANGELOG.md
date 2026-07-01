@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog, and this project uses
 [Conventional Commits](https://www.conventionalcommits.org/) with Release Please.
 
+## [0.5.0](https://github.com/verygoodplugins/automem-graph-viewer/compare/automem-graph-viewer-v0.4.0...automem-graph-viewer-v0.5.0) (2026-07-01)
+
+
+### Features
+
+* **expansion:** make the graph's growth felt — arrival glow, frontier ring, anchor toast, undo ([#20](https://github.com/verygoodplugins/automem-graph-viewer/issues/20)) ([9ae940b](https://github.com/verygoodplugins/automem-graph-viewer/commit/9ae940be0bfb558911c6ec7d8e6e77f42be6ae6e))
+* **search:** turn results into a triage surface ([#23](https://github.com/verygoodplugins/automem-graph-viewer/issues/23)) ([f2c213f](https://github.com/verygoodplugins/automem-graph-viewer/commit/f2c213f1fbe502b3b4edf27692f4306894a10a9a))
+* **ux:** truth & foundations — canonical palette, honest scope language, persistent settings ([#19](https://github.com/verygoodplugins/automem-graph-viewer/issues/19)) ([cc25224](https://github.com/verygoodplugins/automem-graph-viewer/commit/cc252240acf5d3fb3d7028b9d34ff8d5851c3174))
+* **viewer:** LAN-reachable hand bridge, store-wide relationship counts, dev-proxy env fix ([#26](https://github.com/verygoodplugins/automem-graph-viewer/issues/26)) ([7972127](https://github.com/verygoodplugins/automem-graph-viewer/commit/797212714d483a7a9f2b563fafbf2e1377bef063))
+
+
+### Bug Fixes
+
+* **app:** remove duplicated connection block from stacked-PR merge ([#22](https://github.com/verygoodplugins/automem-graph-viewer/issues/22)) ([075fff5](https://github.com/verygoodplugins/automem-graph-viewer/commit/075fff55b2d59924e1cdeced32357e7c97e60ffb))
+* **auth:** accept api_token as URL alias for token ([#25](https://github.com/verygoodplugins/automem-graph-viewer/issues/25)) ([a580aa8](https://github.com/verygoodplugins/automem-graph-viewer/commit/a580aa8c2f22cfd6e4f2586c174a589311c0277a))
+
 ## [0.4.0](https://github.com/verygoodplugins/automem-graph-viewer/compare/automem-graph-viewer-v0.3.0...automem-graph-viewer-v0.4.0) (2026-06-08)
 
 
