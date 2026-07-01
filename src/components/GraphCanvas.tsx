@@ -84,13 +84,14 @@ import {
 import { getEdgeStyle } from "../lib/edgeStyles";
 import { TRACE_START, TRACE_END, TRACE_PATH } from "../lib/palette";
 import { matchesSearch } from "../lib/searchMatch";
+import { getDefaultHandBridgeUrl } from "../lib/handBridge";
 import { EdgeParticles } from "./EdgeParticles";
 import { MiniMap } from "./MiniMap";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 
 // Get iPhone WebSocket URL from URL params or default
 function useIPhoneUrl() {
-  const [iphoneUrl, setIphoneUrl] = useState("ws://localhost:8766/ws");
+  const [iphoneUrl, setIphoneUrl] = useState(getDefaultHandBridgeUrl);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

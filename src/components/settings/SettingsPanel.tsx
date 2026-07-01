@@ -69,6 +69,9 @@ interface SettingsPanelProps {
   // Relationship visibility
   relationshipVisibility: RelationshipVisibility
   onRelationshipVisibilityChange: (visibility: Partial<RelationshipVisibility>) => void
+  // Store-wide edge counts per relationship type (from /graph/stats by_relationship).
+  // Optional: absent while stats load or if the server omits the breakdown.
+  relationshipCounts?: Record<string, number>
   // Audio settings
   soundEnabled: boolean
   onSoundEnabledChange: (enabled: boolean) => void
@@ -107,6 +110,7 @@ export function SettingsPanel({
   onClusterConfigChange,
   relationshipVisibility,
   onRelationshipVisibilityChange,
+  relationshipCounts,
   soundEnabled,
   onSoundEnabledChange,
   soundVolume,
@@ -301,9 +305,20 @@ export function SettingsPanel({
         {/* Relationships Section */}
         <SettingsSection title="Relationships" defaultOpen={false}>
           <div className="space-y-1">
-            {(Object.keys(RELATIONSHIP_INFO) as RelationType[]).map((rel) => {
+            {/* Sort by store-wide count, most-used first, so the typing imbalance
+                is obvious. Array.sort is stable, so a missing/empty counts map
+                leaves the canonical RelationType order untouched (no flash-reorder
+                while stats load). */}
+            {(Object.keys(RELATIONSHIP_INFO) as RelationType[])
+              .slice()
+              .sort(
+                (a, b) =>
+                  (relationshipCounts?.[b] ?? 0) - (relationshipCounts?.[a] ?? 0),
+              )
+              .map((rel) => {
               const info = RELATIONSHIP_INFO[rel]
               const isVisible = relationshipVisibility[rel]
+              const count = relationshipCounts?.[rel]
               return (
                 <button
                   key={rel}
@@ -328,6 +343,14 @@ export function SettingsPanel({
                     }}
                   />
                   <span className="flex-1 text-left">{info.label}</span>
+                  {count != null && (
+                    <span
+                      className="font-mono tabular-nums text-ink-4"
+                      title="Total relationships of this type in the store"
+                    >
+                      {count.toLocaleString()}
+                    </span>
+                  )}
                   <div
                     className={`w-3 h-3 rounded border transition-colors ${
                       isVisible

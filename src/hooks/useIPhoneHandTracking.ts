@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { getDefaultHandBridgeUrl } from '../lib/handBridge'
 import type { GestureState, HandLandmarks, PinchRay } from './useHandGestures'
 import type { NormalizedLandmarkList } from '@mediapipe/hands'
 import { OneEuroFilter, OneEuroFilter3D, ONE_EURO_PRESETS } from '../utils/OneEuroFilter'
@@ -315,8 +316,9 @@ const DEFAULT_STATE: GestureState = {
 export function useIPhoneHandTracking(options: UseIPhoneHandTrackingOptions = {}) {
   const {
     // Default to the local bridge's web client endpoint
-    // (iPhone connects to :8765; browser/web-app should connect to :8766/ws)
-    serverUrl = 'ws://localhost:8766/ws',
+    // (iPhone connects to :8768; browser/web-app should connect to :8766/ws).
+    // Origin-aware so a viewer on another LAN device still reaches the relay.
+    serverUrl = getDefaultHandBridgeUrl(),
     enabled = true,
     onGestureChange
   } = options

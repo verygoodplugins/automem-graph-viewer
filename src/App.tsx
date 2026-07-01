@@ -3,9 +3,10 @@ import { Keyboard, Settings } from 'lucide-react'
 
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels'
 import { useQueryClient } from '@tanstack/react-query'
-import { useGraphSnapshot, useGraphNeighbors, useRecall } from './hooks/useGraphData'
+import { useGraphSnapshot, useGraphNeighbors, useGraphStats, useRecall } from './hooks/useGraphData'
 import { useExpandableGraph } from './hooks/useExpandableGraph'
 import { normalizeNode } from './lib/normalizeNode'
+import { getDefaultHandBridgeUrl } from './lib/handBridge'
 import {
   fetchGraphNeighbors,
   getSnapshotCap,
@@ -229,7 +230,7 @@ export default function App() {
     phonePort: number | null
   }>({
     source: trackingSource,
-    iphoneUrl: 'ws://localhost:8766/ws',
+    iphoneUrl: getDefaultHandBridgeUrl(),
     iphoneConnected: false,
     hasLiDAR: false,
     phoneConnected: false,
@@ -336,6 +337,12 @@ export default function App() {
     types: filters.types.length > 0 ? filters.types : undefined,
     enabled: isAuthenticated,
   })
+
+  // Store-wide stats (every memory on the server, not just the loaded snapshot).
+  // Fires once, cached. Used for the Settings → Relationships per-type counts so
+  // the typing distribution reflects the whole store, not the in-view sample.
+  const { data: graphStats } = useGraphStats(isAuthenticated)
+  const relationshipCounts = graphStats?.by_relationship
 
   // The live, growing graph: seeded/reset from the immutable snapshot, grown by
   // expanding a node's neighborhood. This is the source of truth for what renders.
@@ -605,9 +612,11 @@ export default function App() {
   const handleReenterCredentials = useCallback(() => {
     const url = new URL(window.location.href)
     url.searchParams.delete('token')
+    url.searchParams.delete('api_token')
     if (url.hash) {
       const hashParams = new URLSearchParams(url.hash.slice(1))
       hashParams.delete('token')
+      hashParams.delete('api_token')
       const rest = hashParams.toString()
       url.hash = rest ? `#${rest}` : ''
     }
@@ -1401,6 +1410,7 @@ export default function App() {
           onClusterConfigChange={handleClusterConfigChange}
           relationshipVisibility={relationshipVisibility}
           onRelationshipVisibilityChange={handleRelationshipVisibilityChange}
+          relationshipCounts={relationshipCounts}
           soundEnabled={sound.settings.enabled}
           onSoundEnabledChange={sound.setEnabled}
           soundVolume={sound.settings.masterVolume}
