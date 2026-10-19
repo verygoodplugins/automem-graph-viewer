@@ -75,5 +75,5 @@ The dev server proxies `/graph`, `/recall`, `/memory`, and `/health` to `VITE_AP
 
 - `ci.yml`: `npm ci → lint → build` plus a smoke check on cache headers.
 - Release Please (`release-please.yml`) manages version bumps/changelog from conventional commits — **never** manually bump `package.json` version.
-- `docs-dispatch.yml`: pushes to `main` dispatch a `docs-update` event to `verygoodplugins/automem-website` for files mapped in that repo's `file-doc-map.json`.
+- `docs-dispatch.yml`: runs once per release (the `docs-dispatch` job in `release-please.yml` calls it after a release is created) and dispatches a `docs-update` event to `verygoodplugins/automem-website` for files mapped in that repo's `file-doc-map.json`, diffed against the previous release tag. Docs on automem.ai follow published releases, not every push to `main`. A manual run documents a given release tag (the latest by default).
 - `docker-build.yml` builds the container; Railway deploys via `railway.toml` + `Dockerfile`.
